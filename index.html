@@ -26,13 +26,12 @@
             user-select: none;
         }
 
-        /* 칼같은 비트 타격감 */
         @keyframes beatSnap {
             0% { transform: scale(1.1); border-color: #ef4444; box-shadow: 0 0 35px rgba(239, 68, 68, 0.8); }
             100% { transform: scale(1.0); border-color: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
         }
         .highlight-beat {
-            animation: beatSnap 0.2s cubic-bezier(0.1, 0.9, 0.2, 1) forwards !important;
+            animation: beatSnap 0.25s cubic-bezier(0.1, 0.9, 0.2, 1) forwards !important;
             border-color: #ef4444 !important;
             z-index: 20;
         }
@@ -80,12 +79,13 @@
             ['하천', '평야', '해안', '산지', '평야', '하천', '산지', '해안']  // 5단계
         ];
 
-        // 🔥 수학적으로 계산된 가장 정확한 8박자 스타트 엔진
-        const BEAT_DURATION = 0.341; // 176 BPM 기준 1박자 (약 0.341초)
-        const GAME_START_TIME = BEAT_DURATION * 8; // 정확히 8박자 쉬고(약 2.73초) 바로 본 게임 진입!
+        // 🔥 음악적 분석을 바탕으로 30초 음원에 맞춘 최적화 세팅
+        const BEAT_DURATION = 0.5; // 약 120BPM 기준 (1박자 = 0.5초) -> 초등학생이 가장 신나게 외칠 수 있는 정석 속도
+        const INTRO_BEATS = 8;     // 준비 8박자 (약 4초 소요)
+        const GAME_START_TIME = BEAT_DURATION * INTRO_BEATS; 
+        const BEATS_PER_STAGE = 8; // 🔥 1단계당 8박자(1바퀴)로 축소! (총 5단계 = 40박자 = 20초 소요)
 
         function App() {
-            // 게임 상태: ready -> preparing(8박자 대기) -> playing(본게임) -> end
             const [gameState, setGameState] = useState('ready'); 
             const [currentStage, setCurrentStage] = useState(0);
             const [cardDisplayMode, setCardDisplayMode] = useState('image-and-text'); 
@@ -93,7 +93,6 @@
             
             const audioRef = useRef(null);
 
-            // 🎵 네이티브 오디오 기반 초정밀 메인 엔진
             useEffect(() => {
                 let animationFrameId;
 
@@ -101,31 +100,31 @@
                     if (gameState !== 'ready' && gameState !== 'end' && audioRef.current && !audioRef.current.paused) {
                         const t = audioRef.current.currentTime;
 
-                        // 1. 본 게임 시작 (8박자 이후)
+                        // 1. 본 게임 시작 (인트로 8박자 이후)
                         if (t >= GAME_START_TIME) {
                             if (gameState !== 'playing') setGameState('playing');
                             
                             const playTime = t - GAME_START_TIME;
                             const totalBeatsElapsed = Math.floor(playTime / BEAT_DURATION);
                             
-                            // 5단계(80비트) 종료 처리
-                            if (totalBeatsElapsed >= 80) {
+                            // 5단계(40비트) 종료 처리
+                            if (totalBeatsElapsed >= 40) {
                                 setGameState('end');
-                                audioRef.current.pause();
+                                // 게임은 끝났지만, 노래는 남은 여운(약 5~6초)을 위해 멈추지 않고 끝까지 틀어둠
                                 return;
                             }
 
-                            // 단계 계산 (1단계 = 16박자 = 8칸 x 2바퀴)
-                            const newStage = Math.floor(totalBeatsElapsed / 16);
+                            // 단계 계산 (1단계 = 8박자)
+                            const newStage = Math.floor(totalBeatsElapsed / BEATS_PER_STAGE);
                             if (newStage !== currentStage) {
                                 setCurrentStage(newStage);
                             }
 
-                            // 하이라이트 인덱스 계산 (0~7 순환)
+                            // 하이라이트 인덱스 계산 (0~7)
                             const targetIndex = totalBeatsElapsed % 8;
                             setHighlightIndex(prev => prev !== targetIndex ? targetIndex : prev);
                         } 
-                        // 2. 준비 구간 (시작 ~ 8박자까지) - 카드는 보이지만 하이라이트 없음
+                        // 2. 준비 구간 (시작 ~ 8박자까지)
                         else {
                             if (gameState !== 'preparing') setGameState('preparing');
                             setHighlightIndex(-1);
@@ -144,7 +143,7 @@
                 return () => cancelAnimationFrame(animationFrameId);
             }, [gameState, currentStage]);
 
-            // 오디오 끝날 때 자연스럽게 종료
+            // 노래가 완전히 끝났을 때만 명확하게 종료 처리
             const handleAudioEnded = () => {
                 setGameState('end');
             };
@@ -175,7 +174,6 @@
             return (
                 <div className="w-screen h-screen flex flex-col relative overflow-hidden bg-white text-gray-900">
                     
-                    {/* 깃허브에 올린 MP3 파일 구동 */}
                     <audio 
                         ref={audioRef} 
                         src="./song.mp3" 
@@ -183,7 +181,6 @@
                         onEnded={handleAudioEnded}
                     ></audio>
 
-                    {/* --- 대기 및 종료 화면 --- */}
                     {(gameState === 'ready' || gameState === 'end') && (
                         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center p-8 bg-slate-50/95 backdrop-blur-sm transition-all duration-300">
                             
@@ -193,7 +190,6 @@
                                         단어 리듬 게임
                                     </h1>
                                     
-                                    {/* 화면 제시 방식 선택 (초깔끔 모드) */}
                                     <div className="w-full bg-white p-10 rounded-[2rem] shadow-xl border border-slate-200 mb-12 flex flex-col items-center">
                                         <p className="text-3xl font-bold mb-8 text-slate-700">화면 표시 방식</p>
                                         <div className="flex flex-wrap gap-5 justify-center">
@@ -219,12 +215,10 @@
                         </div>
                     )}
 
-                    {/* --- 상단 헤더 --- */}
                     <header className="h-[12vh] shrink-0 flex justify-between items-center px-10 border-b-2 border-slate-200 bg-white z-10 shadow-sm">
                         <div className="text-5xl">📢</div>
                         
                         <div className="flex-1 flex flex-col items-center justify-center">
-                            {/* 게임 진행 상태에 따른 직관적인 메시지 표시 */}
                             {gameState === 'preparing' && (
                                 <div className="text-3xl font-black text-red-500 animate-pulse bg-red-50 px-8 py-3 rounded-full border border-red-200">
                                     👀 8박자 대기 중... 카드를 미리 읽어두세요!
@@ -237,10 +231,9 @@
                             )}
                         </div>
 
-                        <div className="text-5xl opacity-0">📢</div> {/* 레이아웃 균형 */}
+                        <div className="text-5xl opacity-0">📢</div>
                     </header>
 
-                    {/* --- 메인 카드 영역 --- */}
                     <main className="flex-1 min-h-0 w-full flex items-center justify-center p-6 md:p-10 bg-slate-100">
                         <div className="w-full h-full max-w-7xl grid grid-cols-4 grid-rows-2 gap-5 md:gap-8">
                             {STAGES_DATA[currentStage].map((terrain, index) => {
@@ -258,9 +251,7 @@
                                         <div className={`absolute inset-0 flex flex-col items-center justify-center p-2 ${isHighlighted ? 'content-active bg-red-50/40' : TERRAIN_TYPES[terrain].color}`}>
                                             
                                             {cardDisplayMode !== 'text-only' && (
-                                                <span className="responsive-emoji drop-shadow-sm">
-                                                    {TERRAIN_TYPES[terrain].icon}
-                                                </span>
+                                                <span className="responsive-emoji drop-shadow-sm">{TERRAIN_TYPES[terrain].icon}</span>
                                             )}
                                             
                                             {cardDisplayMode !== 'image-only' && (
@@ -276,7 +267,6 @@
                         </div>
                     </main>
 
-                    {/* --- 하단 푸터 --- */}
                     <footer className="h-[10vh] shrink-0 bg-white border-t-2 border-slate-200 flex justify-between items-center px-10 z-10 shadow-sm">
                         <div className="text-3xl font-black text-slate-600 flex-1 text-center tracking-wide">
                             🔥 비트에 맞춰 다 함께 큰 소리로 외쳐요!
