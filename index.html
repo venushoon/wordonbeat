@@ -20,42 +20,44 @@
             height: 100vh;
             overflow: hidden;
             font-family: 'Jua', sans-serif;
-            background-color: #f8fafc;
-            background-image: radial-gradient(#cbd5e1 1px, transparent 0);
-            background-size: 40px 40px;
+            background-color: #f1f5f9;
             touch-action: none;
             -webkit-user-select: none;
             user-select: none;
         }
 
-        /* 0.34초 비트에 맞춘 역동적인 Snap 애니메이션 */
+        /* 레퍼런스 사이트처럼 날카롭고 절도 있는 하이라이트 타격감 */
         @keyframes beatSnap {
-            0% { transform: scale(1.15); border-color: #ef4444; box-shadow: 0 0 45px rgba(239, 68, 68, 1); }
-            100% { transform: scale(1.0); border-color: #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); }
+            0% { transform: scale(1.1); border-color: #ef4444; box-shadow: 0 0 30px rgba(239, 68, 68, 0.8); }
+            100% { transform: scale(1.0); border-color: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
         }
         .highlight-beat {
-            animation: beatSnap 0.3s cubic-bezier(0.1, 0.9, 0.2, 1) forwards !important;
-            border-color: #ef4444 !important;
+            animation: beatSnap 0.25s cubic-bezier(0.1, 0.9, 0.2, 1) forwards !important;
+            border-color: #ef4444 !important; /* 선명한 빨간색 테두리 */
             z-index: 20;
-            opacity: 1 !important;
         }
 
+        /* 글자 팝 애니메이션 */
         .content-active {
-            transform: scale(1.05);
+            transform: scale(1.08);
             transition: transform 0.1s ease-out;
+            color: #b91c1c; /* 하이라이트 시 글자색도 붉게 강조 */
         }
 
+        /* 화면 크기에 반응하는 글자/그림 크기 */
         .responsive-emoji {
-            font-size: min(12vw, 15vh);
+            font-size: min(10vw, 13vh);
             line-height: 1;
         }
         .responsive-text {
             font-size: min(5vw, 6vh);
             line-height: 1.2;
             margin-top: 0.5rem;
+            color: #1e293b;
         }
         .text-only-mode {
-            font-size: min(8vw, 10vh);
+            font-size: min(7vw, 9vh);
+            color: #1e293b;
         }
     </style>
 </head>
@@ -66,10 +68,10 @@
         const { useState, useEffect, useRef } = React;
 
         const TERRAIN_TYPES = {
-            '산지': { icon: '⛰️', color: 'bg-green-100' },
-            '하천': { icon: '🏞️', color: 'bg-blue-100' },
-            '평야': { icon: '🌾', color: 'bg-yellow-100' },
-            '해안': { icon: '🏖️', color: 'bg-cyan-100' }
+            '산지': { icon: '⛰️', color: 'bg-green-50' },
+            '하천': { icon: '🏞️', color: 'bg-blue-50' },
+            '평야': { icon: '🌾', color: 'bg-yellow-50' },
+            '해안': { icon: '🏖️', color: 'bg-cyan-50' }
         };
 
         const STAGES_DATA = [
@@ -81,22 +83,24 @@
         ];
 
         function App() {
-            const [gameState, setGameState] = useState('ready'); // ready, preparing (준비단계), playing (본게임), end
+            // 상태: ready(대기) -> playing(게임화면 진입: 준비 및 진행 모두 포함) -> end(종료)
+            const [gameState, setGameState] = useState('ready'); 
             const [currentStage, setCurrentStage] = useState(0);
-            const [showVideo, setShowVideo] = useState(false);
             const [cardDisplayMode, setCardDisplayMode] = useState('image-and-text'); 
+            const [showVideo, setShowVideo] = useState(false);
             
-            // 🔥 오디오 동기화의 핵심 세팅 (초 단위)
-            // 선생님 피드백 완벽 반영: 준비비트(8비트) 동안 하이라이트 끔.
-            const [prepBeatsStartTime, setPrepBeatsStartTime] = useState(2.75); // "원투쓰리고" 이후 첫 '삑' 소리 (인트로 비트 시작)
-            const [gameLoopStartTime, setGameLoopStartTime] = useState(5.45);   // 인트로 8비트가 끝나고 실제 본 게임 하이라이트가 시작되는 시점 (완벽 분석값!)
-            const [beatDuration, setBeatDuration] = useState(0.34);          // 본 게임 1칸 이동하는 속도 (0.34초)
+            // 오디오 싱크 핵심 세팅 (수정된 완벽 타이밍)
+            const [prepBeatsStartTime, setPrepBeatsStartTime] = useState(2.75); // 준비 8비트 시작 시간
+            const [gameLoopStartTime, setGameLoopStartTime] = useState(5.45);   // 실제 하이라이트 시작 시간
+            const [beatDuration, setBeatDuration] = useState(0.34);             // 1비트당 시간 (속도)
             
+            // UI를 위한 상태 (준비 구간인지 실제 하이라이트 구간인지 식별)
+            const [isPrepPhase, setIsPrepPhase] = useState(false); 
             const [highlightIndex, setHighlightIndex] = useState(-1);
             
             const ytPlayerRef = useRef(null);
 
-            // 유튜브 API 초기화
+            // 유튜브 API 세팅
             useEffect(() => {
                 const loadYoutubeAPI = () => {
                     if (!window.YT) {
@@ -110,79 +114,62 @@
                         ytPlayerRef.current = new window.YT.Player('yt-player-container', {
                             videoId: '_RiQjsu1KIw',
                             playerVars: { 'controls': 0, 'disablekb': 1, 'rel': 0, 'playsinline': 1 },
-                            events: {
-                                'onReady': () => console.log('유튜브 오디오 엔진 장전 완료!'),
-                            }
+                            events: { 'onReady': () => console.log('Youtube Player Ready') }
                         });
                     };
                 };
-
                 loadYoutubeAPI();
             }, []);
 
-            // 🎵 유튜브 실제 시간 기반 초정밀 리듬 엔진
+            // 🎵 메인 리듬 추적 엔진
             useEffect(() => {
                 let animationFrameId;
 
                 const trackTime = () => {
-                    if (ytPlayerRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function') {
+                    if (gameState === 'playing' && ytPlayerRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function') {
                         const currentTime = ytPlayerRef.current.getCurrentTime();
 
-                        // 1️⃣ 본 게임 (gameLoopStartTime) 이후: 하이라이트 루프 시작
+                        // 1. 실제 본 게임 진행 구간 (하이라이트 이동)
                         if (currentTime >= gameLoopStartTime) {
-                            if (gameState !== 'playing') {
-                                setGameState('playing');
-                                setHighlightIndex(0); // 본 게임 첫 칸 활성화
-                            }
+                            setIsPrepPhase(false);
                             
-                            // 본 게임 시작 후 경과 시간
                             const playTime = currentTime - gameLoopStartTime;
-                            
-                            // 현재 몇 번째 비트인지 계산 (총 80비트 = 16비트 * 5단계)
                             const totalBeatsElapsed = Math.floor(playTime / beatDuration);
                             
-                            // 5단계(80비트)를 넘어갔다면 게임 종료
+                            // 5단계(80비트) 종료 처리
                             if (totalBeatsElapsed >= 80) {
                                 setGameState('end');
                                 ytPlayerRef.current.pauseVideo();
                                 return;
                             }
 
-                            // 현재 단계 계산 (1단계 = 16비트)
+                            // 단계 및 하이라이트 인덱스 계산 (1단계 = 16비트)
                             const newStage = Math.floor(totalBeatsElapsed / 16);
                             if (newStage !== currentStage) {
                                 setCurrentStage(newStage);
                             }
 
-                            // 현재 하이라이트 칸 계산 (0~7 순환)
                             const targetIndex = totalBeatsElapsed % 8;
                             setHighlightIndex(prev => prev !== targetIndex ? targetIndex : prev);
-                        
                         } 
-                        // 2️⃣ 준비비트 (prepBeatsStartTime) 구간: 카드는 반응하지 않고 게임 상태만 준비중
+                        // 2. 준비 비트 구간 ("삑삑삑삑" - 카드는 보이지만 하이라이트는 없는 상태)
                         else if (currentTime >= prepBeatsStartTime && currentTime < gameLoopStartTime) {
-                            if (gameState !== 'preparing') {
-                                setGameState('preparing');
-                                setHighlightIndex(-1); // 카드는 대기
-                            }
+                            setIsPrepPhase(true);
+                            setHighlightIndex(-1); // 하이라이트 끄기
                         }
-                        // 3️⃣ 인트로 (보컬 파트)
+                        // 3. 극초기 인트로 구간
                         else {
-                            if (gameState !== 'preparing' && gameState !== 'ready') {
-                                // 대기 상태였다가 비디오가 재생되면 preparing으로 변경
-                                setGameState('preparing');
-                            }
+                            setIsPrepPhase(false);
                             setHighlightIndex(-1);
                         }
                     }
                     
-                    if (gameState !== 'end' && gameState !== 'ready') {
+                    if (gameState === 'playing') {
                         animationFrameId = requestAnimationFrame(trackTime);
                     }
                 };
 
-                // 게임이 진행 중일 때만 시간 추적 루프 실행
-                if (gameState === 'preparing' || gameState === 'playing') {
+                if (gameState === 'playing') {
                     animationFrameId = requestAnimationFrame(trackTime);
                 }
 
@@ -191,14 +178,14 @@
 
             const startGame = () => {
                 if (ytPlayerRef.current && typeof ytPlayerRef.current.seekTo === 'function') {
-                    // 게임 시작 상태로 변경 (이후trackTime useEffect가 시간 추적)
+                    setGameState('playing');
                     setCurrentStage(0);
                     setHighlightIndex(-1);
-                    setGameState('preparing');
+                    setIsPrepPhase(false);
                     ytPlayerRef.current.seekTo(0, true);
                     ytPlayerRef.current.playVideo();
                 } else {
-                    alert('유튜브 오디오를 불러오는 중입니다. 1~2초 후 다시 눌러주세요!');
+                    alert('유튜브 오디오를 로딩 중입니다. 1~2초 후 다시 눌러주세요!');
                 }
             };
 
@@ -211,116 +198,105 @@
             };
 
             return (
-                <div className="w-screen h-screen flex flex-col relative overflow-hidden text-gray-800">
+                <div className="w-screen h-screen flex flex-col relative overflow-hidden bg-white text-gray-900">
                     
-                    {/* 숨겨진 유튜브 플레이어 컨테이너 */}
+                    {/* 숨겨진 유튜브 플레이어 */}
                     <div 
-                        className={`absolute bottom-[14vh] right-6 rounded-2xl shadow-2xl border-4 border-black transition-all duration-300 overflow-hidden ${showVideo ? 'opacity-100 z-50 translate-y-0' : 'opacity-0 -z-10 translate-y-10 pointer-events-none'}`}
-                        style={{ width: '384px', height: '216px' }}
+                        className={`absolute bottom-[10vh] right-6 rounded-2xl shadow-xl border-4 border-black transition-opacity duration-300 overflow-hidden ${showVideo ? 'opacity-100 z-50' : 'opacity-0 -z-10 pointer-events-none'}`}
+                        style={{ width: '320px', height: '180px' }}
                     >
                         <div id="yt-player-container" className="w-full h-full"></div>
                     </div>
 
-                    {/* --- 대기/성공 화면 오버레이 --- */}
+                    {/* --- 대기(시작 전) 및 종료 화면 --- */}
                     {(gameState === 'ready' || gameState === 'end') && (
-                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center p-12 bg-white/95 transition-colors duration-300">
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center p-8 bg-slate-50">
                             
                             {gameState === 'ready' && (
-                                <>
-                                    <h1 className="text-7xl md:text-8xl font-black mb-8 text-black drop-shadow-md tracking-widest text-center">
-                                        🎵 단어 리듬 게임 🎵
+                                <div className="w-full max-w-4xl flex flex-col items-center animate-fade-in">
+                                    <h1 className="text-6xl md:text-8xl font-black mb-10 text-gray-900 tracking-tight text-center drop-shadow-sm">
+                                        단어 리듬 게임
                                     </h1>
                                     
-                                    {/* 화면 제시 방식 선택 */}
-                                    <div className="mb-6 p-6 bg-gray-100 rounded-3xl border-4 border-black text-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] w-full max-w-4xl flex flex-col items-center">
-                                        <p className="text-2xl font-bold mb-4">화면 제시 방식</p>
+                                    {/* 화면 제시 방식 선택 (깔끔한 UI) */}
+                                    <div className="w-full bg-white p-8 rounded-3xl shadow-lg border-2 border-slate-200 mb-10 flex flex-col items-center">
+                                        <p className="text-2xl font-bold mb-6 text-slate-700">모드를 선택하세요</p>
                                         <div className="flex flex-wrap gap-4 justify-center">
-                                            <button onClick={() => setCardDisplayMode('image-only')} className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'image-only' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}>🖼️ 그림만</button>
-                                            <button onClick={() => setCardDisplayMode('image-and-text')} className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'image-and-text' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}>🖼️✍️ 그림+단어</button>
-                                            <button onClick={() => setCardDisplayMode('text-only')} className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'text-only' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}>✍️ 단어만</button>
+                                            <button onClick={() => setCardDisplayMode('image-only')} className={`px-8 py-4 text-2xl font-bold rounded-2xl transition-all ${cardDisplayMode === 'image-only' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>🖼️ 그림만</button>
+                                            <button onClick={() => setCardDisplayMode('image-and-text')} className={`px-8 py-4 text-2xl font-bold rounded-2xl transition-all ${cardDisplayMode === 'image-and-text' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>🖼️ + ✍️ 그림과 단어</button>
+                                            <button onClick={() => setCardDisplayMode('text-only')} className={`px-8 py-4 text-2xl font-bold rounded-2xl transition-all ${cardDisplayMode === 'text-only' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>✍️ 단어만</button>
                                         </div>
                                     </div>
 
-                                    {/* 🔥 소리/화면 완벽 동기화 튜닝 패널 */}
-                                    <div className="mb-10 p-6 bg-blue-50 rounded-3xl border-4 border-blue-300 flex flex-col items-center shadow-inner w-full max-w-4xl hover:border-blue-500 transition-all">
-                                        <div className="text-2xl font-black text-blue-800 mb-6 flex items-center gap-2">
-                                            ⚙️ 초정밀 싱크 튜닝 <span className="text-lg font-normal text-gray-600">(선생님 전용 설정)</span>
+                                    {/* 싱크 튜닝 (작고 눈에 덜 띄게 배치) */}
+                                    <div className="w-full max-w-2xl bg-slate-100 p-4 rounded-2xl border border-slate-200 mb-10 flex flex-col items-center">
+                                        <div className="text-lg font-bold text-slate-600 mb-4 flex items-center gap-2">
+                                            ⚙️ 선생님 전용 싱크 조절
                                         </div>
-                                        
                                         <div className="flex gap-10 w-full justify-center">
-                                            {/* 1. 본 게임 시작점 조절 */}
                                             <div className="flex flex-col items-center">
-                                                <span className="text-xl font-bold mb-3">1️⃣ 본 게임 하이라이트 시작점</span>
-                                                <div className="flex items-center gap-3">
-                                                    <button onClick={() => setGameLoopStartTime(prev => Math.max(0, parseFloat((prev - 0.01).toFixed(2))))} className="px-4 py-2 bg-white border-2 border-black rounded-xl font-bold text-2xl active:bg-gray-200 hover:scale-110">-0.01s</button>
-                                                    <div className="text-3xl font-black w-32 text-center bg-white border-2 border-gray-300 py-2 rounded-xl text-blue-700">{gameLoopStartTime}초</div>
-                                                    <button onClick={() => setGameLoopStartTime(prev => parseFloat((prev + 0.01).toFixed(2)))} className="px-4 py-2 bg-white border-2 border-black rounded-xl font-bold text-2xl active:bg-gray-200 hover:scale-110">+0.01s</button>
+                                                <span className="text-sm font-bold text-slate-500 mb-2">시작 타이밍 (현재: {gameLoopStartTime}초)</span>
+                                                <div className="flex items-center gap-2">
+                                                    <button onClick={() => setGameLoopStartTime(prev => Math.max(0, parseFloat((prev - 0.01).toFixed(2))))} className="px-3 py-1 bg-white border border-slate-300 rounded font-bold hover:bg-slate-50">-</button>
+                                                    <button onClick={() => setGameLoopStartTime(prev => parseFloat((prev + 0.01).toFixed(2)))} className="px-3 py-1 bg-white border border-slate-300 rounded font-bold hover:bg-slate-50">+</button>
                                                 </div>
-                                                <span className="text-sm text-gray-500 mt-2 text-center">8비트 준비가 끝났는데 카드가 안 움직이면 '-' 누름<br/>준비가 안 끝났는데 카드가 움직이면 '+' 누름</span>
                                             </div>
-
-                                            {/* 2. 비트 속도 조절 */}
-                                            <div className="flex flex-col items-center border-l-2 border-blue-200 pl-10">
-                                                <span className="text-xl font-bold mb-3">2️⃣ 칸 이동 속도 (템포)</span>
-                                                <div className="flex items-center gap-3">
-                                                    <button onClick={() => setBeatDuration(prev => Math.max(0.1, parseFloat((prev - 0.005).toFixed(3))))} className="px-4 py-2 bg-white border-2 border-black rounded-xl font-bold text-2xl active:bg-gray-200 hover:scale-110">-0.005s</button>
-                                                    <div className="text-3xl font-black w-32 text-center bg-white border-2 border-gray-300 py-2 rounded-xl text-green-600">{beatDuration}초</div>
-                                                    <button onClick={() => setBeatDuration(prev => parseFloat((prev + 0.005).toFixed(3)))} className="px-4 py-2 bg-white border-2 border-black rounded-xl font-bold text-2xl active:bg-gray-200 hover:scale-110">+0.005s</button>
+                                            <div className="flex flex-col items-center border-l border-slate-300 pl-10">
+                                                <span className="text-sm font-bold text-slate-500 mb-2">비트 속도 (현재: {beatDuration}초)</span>
+                                                <div className="flex items-center gap-2">
+                                                    <button onClick={() => setBeatDuration(prev => Math.max(0.1, parseFloat((prev - 0.005).toFixed(3))))} className="px-3 py-1 bg-white border border-slate-300 rounded font-bold hover:bg-slate-50">-</button>
+                                                    <button onClick={() => setBeatDuration(prev => parseFloat((prev + 0.005).toFixed(3)))} className="px-3 py-1 bg-white border border-slate-300 rounded font-bold hover:bg-slate-50">+</button>
                                                 </div>
-                                                <span className="text-sm text-gray-500 mt-2 text-center">하이라이트가 소리보다<br/>점점 빨라지면 '+' 눌러서 템포 늦춤</span>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <button onClick={startGame} className="px-16 py-6 bg-green-500 border-4 border-black text-black font-black text-5xl md:text-6xl rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] active:translate-y-2 active:shadow-none transition-all">
-                                        게임 시작!
+                                    <button onClick={startGame} className="px-20 py-6 bg-gray-900 text-white font-black text-4xl rounded-full shadow-xl hover:scale-105 active:scale-95 transition-all">
+                                        ▶ 플레이 시작
                                     </button>
-                                </>
+                                </div>
                             )}
 
                             {gameState === 'end' && (
-                                <>
-                                    <div className="text-[10rem] mb-4">🎉</div>
-                                    <h2 className="text-8xl font-black mb-10 text-green-600 drop-shadow-md tracking-widest">완주 성공!</h2>
-                                    <button onClick={restartGame} className="px-12 py-5 bg-white border-4 border-black text-4xl font-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-2 transition-all">다시 하기</button>
-                                </>
+                                <div className="text-center animate-fade-in">
+                                    <div className="text-[8rem] mb-4">🎉</div>
+                                    <h2 className="text-7xl font-black mb-10 text-gray-900">완주를 축하합니다!</h2>
+                                    <button onClick={restartGame} className="px-12 py-5 bg-blue-600 text-white text-3xl font-bold rounded-full shadow-lg hover:scale-105 transition-all">처음으로 돌아가기</button>
+                                </div>
                             )}
                         </div>
                     )}
 
-                    <header className="h-[12vh] shrink-0 flex justify-between items-center px-6 md:px-10 border-b-4 border-gray-300 bg-white shadow-sm z-10">
-                        <div className="text-5xl md:text-6xl drop-shadow-md">📢</div>
+                    {/* --- 상단 헤더 --- */}
+                    <header className="h-[12vh] shrink-0 flex justify-between items-center px-8 border-b-2 border-slate-200 bg-white z-10">
+                        <div className="text-4xl md:text-5xl">📢</div>
                         
-                        <div className="flex-1 max-w-2xl mx-8 flex flex-col items-center gap-2">
-                            <span className="text-5xl md:text-6xl font-black tracking-widest text-black">
-                                {currentStage + 1} / 5 단계
-                            </span>
-                            {gameState === 'preparing' && (
-                                <div className="text-2xl font-bold text-red-500 animate-pulse">인트로 준비 중... 다 함께 리듬을 타세요! 🎶</div>
-                            )}
-                            {gameState === 'playing' && (
-                                <div className="text-xl font-bold text-blue-600">비트에 맞춰 다 함께 외쳐요!</div>
+                        <div className="flex-1 flex flex-col items-center justify-center gap-1">
+                            {/* 준비 상태일 때와 진행 중일 때 텍스트 분기 */}
+                            {isPrepPhase ? (
+                                <div className="text-2xl md:text-3xl font-black text-red-500 animate-pulse bg-red-50 px-6 py-2 rounded-full border border-red-200">
+                                    👀 카드를 미리 읽어보며 리듬을 타세요!
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-4">
+                                    <span className="text-3xl md:text-4xl font-black text-slate-800 bg-slate-100 px-6 py-2 rounded-full">
+                                        {currentStage + 1} / 5 단계
+                                    </span>
+                                </div>
                             )}
                         </div>
 
                         <div className="flex items-center">
-                            <button onClick={() => setShowVideo(!showVideo)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-lg md:text-xl font-bold active:scale-95 transition-transform shadow-md">
-                                {showVideo ? '영상 끄기 🙈' : '영상 보기 📺'}
+                            <button onClick={() => setShowVideo(!showVideo)} className="px-4 py-2 bg-slate-800 text-white rounded-xl text-lg font-bold hover:bg-slate-700 transition-colors">
+                                {showVideo ? '영상 끄기' : '영상 보기'}
                             </button>
                         </div>
                     </header>
 
-                    <main className="flex-1 min-h-0 w-full flex items-center justify-center p-4 bg-slate-100/50 relative">
-                        {/* 준비 단계 (preparing) 오버레이 */}
-                        {gameState === 'preparing' && (
-                            <div className="absolute inset-4 bg-yellow-300 border-8 border-dashed border-black rounded-3xl z-40 flex flex-col items-center justify-center animate-pulse shadow-xl">
-                                <div className="text-[10rem] mb-4">🎤</div>
-                                <h2 className="text-8xl font-black text-black tracking-widest drop-shadow-lg">원! 투! 쓰리! 고!</h2>
-                                <p className="text-4xl text-gray-800 mt-6">준비비트(8번) 이후에 본 게임이 시작됩니다!</p>
-                            </div>
-                        )}
-
-                        <div className="w-full h-full max-w-7xl max-h-[80vh] grid grid-cols-4 grid-rows-2 gap-3 md:gap-5">
+                    {/* --- 메인 카드 영역 (방해물 완전 제거, 투명도 없음) --- */}
+                    <main className="flex-1 min-h-0 w-full flex items-center justify-center p-4 md:p-8 bg-slate-100">
+                        {/* 4x2 그리드 배열 */}
+                        <div className="w-full h-full max-w-7xl grid grid-cols-4 grid-rows-2 gap-4 md:gap-6">
                             {STAGES_DATA[currentStage].map((terrain, index) => {
                                 const isHighlighted = index === highlightIndex;
 
@@ -328,23 +304,21 @@
                                     <div 
                                         key={index}
                                         className={`
-                                            relative w-full h-full rounded-xl border-[6px] md:border-8 overflow-hidden
-                                            transition-colors duration-[50ms] shadow-sm
-                                            ${TERRAIN_TYPES[terrain].color}
-                                            ${isHighlighted ? 'highlight-beat' : 'border-gray-800 opacity-60'}
+                                            relative w-full h-full rounded-2xl border-[5px] overflow-hidden bg-white shadow-sm
+                                            transition-all duration-[50ms]
+                                            ${isHighlighted ? 'highlight-beat' : 'border-slate-300'}
                                         `}
                                     >
-                                        <div className={`absolute inset-0 flex flex-col items-center justify-center p-2 ${isHighlighted ? 'content-active' : ''}`}>
+                                        <div className={`absolute inset-0 flex flex-col items-center justify-center p-2 ${isHighlighted ? 'content-active bg-red-50/30' : TERRAIN_TYPES[terrain].color}`}>
                                             
                                             {cardDisplayMode !== 'text-only' && (
-                                                <span className="responsive-emoji drop-shadow-md">
+                                                <span className="responsive-emoji drop-shadow-sm">
                                                     {TERRAIN_TYPES[terrain].icon}
                                                 </span>
                                             )}
                                             
                                             {cardDisplayMode !== 'image-only' && (
-                                                <span className={`font-black text-white tracking-widest drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] text-center ${cardDisplayMode === 'text-only' ? 'text-only-mode' : 'responsive-text'}`}
-                                                      style={{ WebkitTextStroke: '2px black' }}>
+                                                <span className={`font-black tracking-wide text-center ${cardDisplayMode === 'text-only' ? 'text-only-mode' : 'responsive-text'}`}>
                                                     {terrain}
                                                 </span>
                                             )}
@@ -356,12 +330,13 @@
                         </div>
                     </main>
 
-                    <footer className="h-[12vh] shrink-0 bg-white border-t-4 border-gray-300 flex justify-between items-center px-6 md:px-12 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-                        <div className="text-3xl md:text-4xl font-black text-red-500 tracking-wider flex-1 text-center animate-pulse">
-                            🎤 비트에 맞춰 붉은 칸을 큰 소리로 외쳐요!
+                    {/* --- 하단 푸터 --- */}
+                    <footer className="h-[10vh] shrink-0 bg-white border-t-2 border-slate-200 flex justify-between items-center px-8 z-10">
+                        <div className="text-2xl md:text-3xl font-black text-slate-600 flex-1 text-center">
+                            붉은 칸에 맞춰 다 함께 큰 소리로 외쳐요!
                         </div>
-                        <button onClick={restartGame} className="px-6 py-3 md:px-8 md:py-4 bg-gray-100 border-4 border-black text-black font-black text-2xl md:text-3xl rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-gray-200 active:translate-y-1 active:shadow-none transition-all">
-                            처음으로 🔄
+                        <button onClick={restartGame} className="px-6 py-3 bg-slate-200 text-slate-700 font-bold text-xl rounded-xl hover:bg-slate-300 transition-colors">
+                            종료 ⏹️
                         </button>
                     </footer>
                     
