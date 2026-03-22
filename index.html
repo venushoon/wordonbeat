@@ -23,24 +23,31 @@
             background-color: #f8fafc;
             background-image: radial-gradient(#cbd5e1 1px, transparent 0);
             background-size: 40px 40px;
-            /* 제시형이므로 터치/드래그 완전 차단 */
             touch-action: none;
             -webkit-user-select: none;
             user-select: none;
         }
 
-        /* 하이라이트 통통 튀는 애니메이션 */
-        @keyframes beatBounce {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.08); }
-            100% { transform: scale(1.03); }
+        /* [수정됨] 박자에 맞춰 0% 시점에 가장 팽창하고 강하게 강조되는 Snap 애니메이션 */
+        @keyframes beatSnap {
+            0% { transform: scale(1.1); border-color: #ef4444; box-shadow: 0 0 35px rgba(239, 68, 68, 1); }
+            100% { transform: scale(1.02); border-color: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
         }
         .highlight-beat {
-            animation: beatBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-            border-color: #ef4444 !important; /* Tailwind red-500 */
-            box-shadow: 0 0 25px rgba(239, 68, 68, 0.8) !important;
+            animation: beatSnap 0.4s cubic-bezier(0.1, 0.9, 0.2, 1) forwards; /* 빠르고 날카로운 곡선 */
+            border-color: #ef4444 !important;
             z-index: 20;
             opacity: 1 !important;
+        }
+
+        /* 내부 컨텐츠가 튀어오르는 효과 */
+        @keyframes contentPop {
+            0% { transform: scale(0.8); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .content-active {
+            animation: contentPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
 
         .responsive-emoji {
@@ -78,17 +85,20 @@
             ['하천', '평야', '해안', '산지', '평야', '하천', '산지', '해안']  // 5단계
         ];
 
-        // ⏱️ 음원에 맞춘 정밀 템포 세팅
-        const INTRO_DURATION = 2700; // 인트로 대기 시간
-        const STAGE_DURATION = 5450; // 1단계당 할당 시간 (5.45초)
+        // 기본 템포 설정
+        const BASE_INTRO_DURATION = 2700; // 기본 인트로 시간 (2.7초)
+        const STAGE_DURATION = 5450;      // 1단계 총 시간 (5.45초)
+        const BEAT_DURATION = STAGE_DURATION / 8; // 1칸 이동 시간 (약 681ms)
 
         function App() {
-            const [gameState, setGameState] = useState('ready'); // ready, intro, playing, end
+            const [gameState, setGameState] = useState('ready'); 
             const [currentStage, setCurrentStage] = useState(0);
             const [showVideo, setShowVideo] = useState(false);
-            const [cardDisplayMode, setCardDisplayMode] = useState('image-and-text'); // image-only, image-and-text, text-only
+            const [cardDisplayMode, setCardDisplayMode] = useState('image-and-text'); 
             
-            // 🔥 자동 하이라이트를 위한 인덱스 상태 (0~7)
+            // 🔥 싱크 조절 상태 (초기값: 유튜브 네트워크 딜레이를 고려한 기본 +200ms 보정)
+            const [syncOffset, setSyncOffset] = useState(200); 
+
             const [highlightIndex, setHighlightIndex] = useState(-1);
             const [timerKey, setTimerKey] = useState(0); 
             
@@ -110,10 +120,13 @@
                 sendYTCmd('seekTo', [0, true]);
                 sendYTCmd('playVideo');
 
+                // 싱크 오프셋이 적용된 정확한 인트로 타임아웃
+                const exactIntroDuration = BASE_INTRO_DURATION + syncOffset;
+
                 setTimeout(() => {
                     setGameState('playing');
                     setTimerKey(prev => prev + 1); 
-                }, INTRO_DURATION);
+                }, Math.max(0, exactIntroDuration)); // 음수가 되지 않도록 방어
             };
 
             const restartGame = () => {
@@ -126,7 +139,7 @@
                     const next = prev + 1;
                     if (next < 5) {
                         setTimerKey(k => k + 1); 
-                        setHighlightIndex(0); // 새 단계마다 하이라이트 첫 칸으로 리셋
+                        setHighlightIndex(0); 
                         return next;
                     } else {
                         setGameState('end'); 
@@ -136,31 +149,40 @@
                 });
             };
 
-            // 🎵 노래방 하이라이트 및 단계 자동 넘김 로직
+            // 🎵 초정밀 절대 시간 기반 렌더링 루프 (`setInterval` 제거)
             useEffect(() => {
-                let stageTimeout;
-                let beatInterval;
+                let animationFrameId;
+                let startTime;
 
                 if (gameState === 'playing') {
-                    // 1. 하이라이트를 0번 칸부터 시작
-                    setHighlightIndex(0);
+                    startTime = Date.now();
+                    setHighlightIndex(0); // 루프 시작 즉시 첫 칸 활성화
 
-                    // 2. 5.45초(STAGE_DURATION)를 8등분하여 칸을 순서대로 이동 (약 681ms 마다 이동)
-                    const timePerBeat = STAGE_DURATION / 8;
-                    beatInterval = setInterval(() => {
-                        setHighlightIndex(prev => (prev < 7 ? prev + 1 : 7));
-                    }, timePerBeat);
+                    const checkBeat = () => {
+                        const elapsed = Date.now() - startTime;
 
-                    // 3. 5.45초 뒤 다음 단계로 이동
-                    stageTimeout = setTimeout(() => {
-                        nextStage();
-                    }, STAGE_DURATION);
+                        if (elapsed >= STAGE_DURATION) {
+                            nextStage();
+                            return; // 현재 루프 종료, 다음 단계 시작
+                        }
+
+                        // 경과 시간을 기준으로 정확한 현재 칸 계산
+                        const newIndex = Math.floor(elapsed / BEAT_DURATION);
+                        
+                        setHighlightIndex(prev => {
+                            if (prev !== newIndex && newIndex < 8) {
+                                return newIndex;
+                            }
+                            return prev;
+                        });
+
+                        animationFrameId = requestAnimationFrame(checkBeat);
+                    };
+
+                    animationFrameId = requestAnimationFrame(checkBeat);
                 }
 
-                return () => {
-                    clearTimeout(stageTimeout);
-                    clearInterval(beatInterval);
-                };
+                return () => cancelAnimationFrame(animationFrameId);
             }, [gameState, currentStage]); 
 
             return (
@@ -183,32 +205,62 @@
                             
                             {gameState === 'ready' && (
                                 <>
-                                    <h1 className="text-7xl md:text-8xl font-black mb-12 text-black drop-shadow-md tracking-widest text-center">
+                                    <h1 className="text-7xl md:text-8xl font-black mb-8 text-black drop-shadow-md tracking-widest text-center">
                                         🎵 단어 리듬 게임 🎵
                                     </h1>
-                                    <div className="mb-12 p-8 bg-gray-100 rounded-3xl border-4 border-black text-center shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
-                                        <p className="text-3xl md:text-4xl text-black font-bold mb-8">화면 제시 방식 선택</p>
+                                    
+                                    {/* 화면 제시 방식 선택 */}
+                                    <div className="mb-6 p-6 bg-gray-100 rounded-3xl border-4 border-black text-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                                        <p className="text-2xl md:text-3xl text-black font-bold mb-6">화면 제시 방식</p>
                                         <div className="flex flex-wrap gap-4 justify-center">
                                             <button 
                                                 onClick={() => setCardDisplayMode('image-only')}
-                                                className={`px-6 py-4 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'image-only' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}
+                                                className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'image-only' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}
                                             >
                                                 🖼️ 그림만
                                             </button>
                                             <button 
                                                 onClick={() => setCardDisplayMode('image-and-text')}
-                                                className={`px-6 py-4 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'image-and-text' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}
+                                                className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'image-and-text' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}
                                             >
                                                 🖼️✍️ 그림+단어
                                             </button>
                                             <button 
                                                 onClick={() => setCardDisplayMode('text-only')}
-                                                className={`px-6 py-4 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'text-only' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}
+                                                className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'text-only' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}
                                             >
                                                 ✍️ 단어만
                                             </button>
                                         </div>
                                     </div>
+
+                                    {/* 🔥 오디오 싱크 조절 패널 */}
+                                    <div className="mb-10 p-4 bg-blue-50 rounded-2xl border-4 border-blue-200 flex flex-col items-center">
+                                        <div className="text-xl font-bold text-blue-800 mb-2">
+                                            ⚙️ 오디오 싱크 맞추기 <span className="text-sm font-normal text-gray-500">(테두리 움직임과 소리가 안 맞을 때)</span>
+                                        </div>
+                                        <div className="flex items-center gap-6">
+                                            <button 
+                                                onClick={() => setSyncOffset(o => o - 100)}
+                                                className="px-4 py-2 bg-white border-2 border-black rounded-lg font-bold text-xl active:bg-gray-200"
+                                            >
+                                                -100ms
+                                            </button>
+                                            <div className="text-2xl font-black min-w-[120px] text-center">
+                                                {syncOffset > 0 ? `+${syncOffset}` : syncOffset} ms
+                                            </div>
+                                            <button 
+                                                onClick={() => setSyncOffset(o => o + 100)}
+                                                className="px-4 py-2 bg-white border-2 border-black rounded-lg font-bold text-xl active:bg-gray-200"
+                                            >
+                                                +100ms
+                                            </button>
+                                        </div>
+                                        <div className="text-sm text-blue-600 mt-2">
+                                            * 소리가 화면보다 늦으면 '+' / 소리가 빠르면 '-'
+                                        </div>
+                                    </div>
+
                                     <button 
                                         onClick={startGame}
                                         className="px-16 py-6 bg-green-500 border-4 border-black text-black font-black text-5xl md:text-6xl rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] active:translate-y-2 active:shadow-none transition-all"
@@ -271,7 +323,6 @@
                     <main className="flex-1 min-h-0 w-full flex items-center justify-center p-4 bg-slate-100/50">
                         <div className="w-full h-full max-w-7xl max-h-[80vh] grid grid-cols-4 grid-rows-2 gap-3 md:gap-5">
                             {STAGES_DATA[currentStage].map((terrain, index) => {
-                                // 현재 인덱스가 하이라이트 인덱스인지 확인
                                 const isHighlighted = index === highlightIndex;
 
                                 return (
@@ -279,21 +330,19 @@
                                         key={index}
                                         className={`
                                             relative w-full h-full rounded-xl border-[6px] md:border-8 overflow-hidden
-                                            transition-all duration-75 shadow-sm
+                                            transition-colors duration-100 shadow-sm
                                             ${TERRAIN_TYPES[terrain].color}
                                             ${isHighlighted ? 'highlight-beat' : 'border-gray-800 opacity-60'}
                                         `}
                                     >
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center p-2">
+                                        <div className={`absolute inset-0 flex flex-col items-center justify-center p-2 ${isHighlighted ? 'content-active' : ''}`}>
                                             
-                                            {/* 그림 렌더링 (단어만 모드가 아닐 때) */}
                                             {cardDisplayMode !== 'text-only' && (
                                                 <span className="responsive-emoji drop-shadow-md">
                                                     {TERRAIN_TYPES[terrain].icon}
                                                 </span>
                                             )}
                                             
-                                            {/* 텍스트 렌더링 (그림만 모드가 아닐 때) */}
                                             {cardDisplayMode !== 'image-only' && (
                                                 <span className={`font-black text-white tracking-widest drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] text-center ${cardDisplayMode === 'text-only' ? 'text-only-mode' : 'responsive-text'}`}
                                                       style={{ WebkitTextStroke: '2px black' }}>
@@ -311,7 +360,7 @@
                     {/* --- 하단 컨트롤 바 영역 --- */}
                     <footer className="h-[12vh] shrink-0 bg-white border-t-4 border-gray-300 flex justify-between items-center px-6 md:px-12 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
                         <div className="text-3xl md:text-4xl font-black text-red-500 tracking-wider flex-1 text-center animate-pulse">
-                            🎤 비트에 맞춰 붉은 칸을 큰 소리로 읽어보세요!
+                            🎤 비트에 맞춰 붉은 칸을 큰 소리로 외쳐요!
                         </div>
                         <button 
                             onClick={restartGame}
