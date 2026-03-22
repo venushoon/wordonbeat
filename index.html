@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>비트 온 지형! (Word on Beat)</title>
+    <title>단어 리듬 게임 (지형편)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -13,7 +13,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
 
     <style>
-        /* 화면 잘림 방지 및 터치 최적화 */
         body {
             margin: 0;
             padding: 0;
@@ -22,17 +21,14 @@
             overflow: hidden;
             font-family: 'Jua', sans-serif;
             background-color: #f1f5f9;
-            /* 종이 질감 배경 효과 */
             background-image: radial-gradient(#cbd5e1 1px, transparent 0);
             background-size: 40px 40px;
-            /* 터치 간섭 완벽 차단 */
             touch-action: none;
             -webkit-user-select: none;
             user-select: none;
             -webkit-touch-callout: none;
         }
 
-        /* 텍스트 등장 애니메이션 */
         @keyframes popText {
             0% { transform: scale(0.5); opacity: 0; }
             80% { transform: scale(1.1); opacity: 1; }
@@ -47,9 +43,8 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useRef } = React;
 
-        // 지형 데이터 (그림 대신 이모지와 배경색으로 구분하여 즉시 실행 가능하도록 구성)
         const TERRAIN_TYPES = {
             '산지': { icon: '⛰️', color: 'bg-green-100' },
             '하천': { icon: '🏞️', color: 'bg-blue-100' },
@@ -57,61 +52,56 @@
             '해안': { icon: '🏖️', color: 'bg-cyan-100' }
         };
 
-        // 5단계 데이터 생성 (각 단계별 8칸 - 4x2 배열)
         const STAGES_DATA = [
             ['하천', '하천', '하천', '하천', '산지', '하천', '산지', '하천'], // 1단계
             ['평야', '산지', '평야', '평야', '하천', '평야', '산지', '평야'], // 2단계
             ['해안', '해안', '산지', '해안', '해안', '하천', '해안', '해안'], // 3단계
             ['산지', '산지', '하천', '평야', '산지', '산지', '해안', '산지'], // 4단계
-            ['하천', '평야', '해안', '산지', '평야', '하천', '산지', '해안']  // 5단계 (랜덤 심화)
+            ['하천', '평야', '해안', '산지', '평야', '하천', '산지', '해안']  // 5단계
         ];
 
         function App() {
-            const [gameState, setGameState] = useState('ready'); // ready, playing
+            const [gameState, setGameState] = useState('ready'); 
             const [currentStage, setCurrentStage] = useState(0);
             const [revealedCards, setRevealedCards] = useState(Array(8).fill(false));
             const [isPlayingBgm, setIsPlayingBgm] = useState(false);
+            const [showVideo, setShowVideo] = useState(false);
             
-            const audioRef = useRef(null);
-            const fileInputRef = useRef(null);
+            const ytRef = useRef(null);
 
-            // BGM 파일 업로드 처리
-            const handleAudioUpload = (event) => {
-                const file = event.target.files[0];
-                if (file) {
-                    const audioUrl = URL.createObjectURL(file);
-                    audioRef.current.src = audioUrl;
+            // 유튜브 iframe 제어 함수 (postMessage 활용)
+            const sendYTCmd = (cmd, args = []) => {
+                if (ytRef.current && ytRef.current.contentWindow) {
+                    ytRef.current.contentWindow.postMessage(
+                        JSON.stringify({ event: 'command', func: cmd, args: args }), '*'
+                    );
                 }
             };
 
-            // 게임 시작 및 BGM 재생
             const startGame = () => {
                 setGameState('playing');
                 setCurrentStage(0);
                 setRevealedCards(Array(8).fill(false));
                 
-                if (audioRef.current) {
-                    audioRef.current.play().catch(e => console.log("오디오 자동재생 제한됨", e));
-                    setIsPlayingBgm(true);
-                }
+                // 게임 시작 시 유튜브 영상 0초로 되돌리고 재생
+                sendYTCmd('seekTo', [0, true]);
+                sendYTCmd('playVideo');
+                setIsPlayingBgm(true);
             };
 
-            // 카드 터치 시 글자 보이기/숨기기 토글
             const toggleCard = (index) => {
                 const newRevealed = [...revealedCards];
                 newRevealed[index] = !newRevealed[index];
                 setRevealedCards(newRevealed);
             };
 
-            // 다음 단계로 이동
             const nextStage = () => {
                 if (currentStage < 4) {
                     setCurrentStage(prev => prev + 1);
-                    setRevealedCards(Array(8).fill(false)); // 카드 초기화
+                    setRevealedCards(Array(8).fill(false));
                 }
             };
 
-            // 이전 단계로 이동
             const prevStage = () => {
                 if (currentStage > 0) {
                     setCurrentStage(prev => prev - 1);
@@ -119,47 +109,40 @@
                 }
             };
 
-            // BGM 재생/일시정지 제어
             const toggleBgm = () => {
-                if (audioRef.current.paused) {
-                    audioRef.current.play();
-                    setIsPlayingBgm(true);
+                if (isPlayingBgm) {
+                    sendYTCmd('pauseVideo');
                 } else {
-                    audioRef.current.pause();
-                    setIsPlayingBgm(false);
+                    sendYTCmd('playVideo');
                 }
+                setIsPlayingBgm(!isPlayingBgm);
             };
 
             return (
                 <div className="w-full h-full flex flex-col items-center justify-center relative">
                     
-                    {/* 숨겨진 오디오 태그 (기본 무료 비트 제공, 파일 업로드 시 교체됨) */}
-                    <audio 
-                        ref={audioRef} 
-                        loop 
-                        src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" 
-                        preload="auto"
-                    />
+                    {/* 유튜브 Iframe (숨기기/보이기 기능 지원) */}
+                    <iframe 
+                        ref={ytRef}
+                        className={`absolute bottom-4 right-4 rounded-2xl shadow-2xl border-4 border-black transition-all duration-300 ${showVideo ? 'opacity-100 z-50 translate-y-0' : 'opacity-0 -z-10 translate-y-10 pointer-events-none'}`}
+                        width="384" 
+                        height="216" 
+                        src="https://www.youtube.com/embed/_RiQjsu1KIw?enablejsapi=1&controls=0&rel=0&playsinline=1" 
+                        frameBorder="0"
+                        allow="autoplay; encrypted-media"
+                    ></iframe>
 
                     {/* --- 대기 화면 --- */}
                     {gameState === 'ready' && (
-                        <div className="flex flex-col items-center bg-white/90 p-10 rounded-3xl shadow-2xl z-10 border-4 border-black">
-                            <h1 className="text-7xl font-black mb-8 text-black drop-shadow-md tracking-widest">
+                        <div className="flex flex-col items-center bg-white/95 p-12 rounded-3xl shadow-2xl z-10 border-4 border-black">
+                            <h1 className="text-7xl font-black mb-6 text-black drop-shadow-md tracking-widest">
                                 🎵 단어 리듬 게임 🎵
                             </h1>
+                            <p className="text-2xl text-gray-600 mb-10 text-center">
+                                '무 뽑아 장아찌~' 비트에 맞춰 화면을 터치하세요!<br/>
+                                (시작 버튼을 누르면 원본 오디오가 자동 재생됩니다)
+                            </p>
                             
-                            <div className="mb-8 p-6 bg-gray-100 rounded-xl border-2 border-dashed border-gray-400 text-center">
-                                <p className="text-2xl text-gray-700 mb-4">🎶 원하시는 인스타 릴스 음악(MP3)이 있다면 넣어주세요!</p>
-                                <p className="text-xl text-gray-500 mb-4">(선택 안 하시면 기본 비트가 재생됩니다)</p>
-                                <input 
-                                    type="file" 
-                                    accept="audio/*" 
-                                    onChange={handleAudioUpload}
-                                    ref={fileInputRef}
-                                    className="block w-full text-xl text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-full file:border-0 file:text-xl file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
-                                />
-                            </div>
-
                             <button 
                                 onClick={startGame}
                                 className="px-16 py-6 bg-yellow-400 border-4 border-black text-black font-black text-5xl rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-2 active:shadow-none transition-all"
@@ -173,7 +156,7 @@
                     {gameState === 'playing' && (
                         <div className="w-full h-full flex flex-col items-center justify-between p-4">
                             
-                            {/* 상단 UI (메가폰, 단계 표시, 번개) */}
+                            {/* 상단 UI */}
                             <div className="w-full flex justify-between items-center px-10 pt-4 h-[15%]">
                                 <div className="text-7xl drop-shadow-lg">📢</div>
                                 <div className="text-8xl font-black tracking-widest text-black drop-shadow-md flex items-center gap-4">
@@ -181,18 +164,23 @@
                                     <span>{currentStage + 1} / 5</span>
                                     <button onClick={nextStage} className={`text-6xl text-gray-400 hover:text-black transition-colors ${currentStage === 4 ? 'invisible' : ''}`}>▶</button>
                                 </div>
-                                <div className="flex flex-col items-center">
-                                    <div className="text-7xl drop-shadow-lg mb-2">⚡</div>
+                                <div className="flex flex-col items-end gap-3">
                                     <button 
                                         onClick={toggleBgm}
-                                        className="px-4 py-2 bg-black text-white rounded-full text-xl font-bold shadow-md active:scale-95"
+                                        className="px-6 py-3 bg-black text-white rounded-full text-2xl font-bold shadow-md active:scale-95 transition-transform"
                                     >
                                         {isPlayingBgm ? '음악 끄기 ⏸️' : '음악 켜기 ▶️'}
+                                    </button>
+                                    <button 
+                                        onClick={() => setShowVideo(!showVideo)}
+                                        className="px-6 py-3 bg-blue-600 text-white rounded-full text-xl font-bold shadow-md active:scale-95 transition-transform"
+                                    >
+                                        {showVideo ? '원본 영상 숨기기 🙈' : '원본 영상 보기 📺'}
                                     </button>
                                 </div>
                             </div>
 
-                            {/* 4x2 격자 배열 (선생님 사진과 동일한 비율 및 테두리 두께) */}
+                            {/* 4x2 격자 배열 */}
                             <div className="w-[95%] max-w-7xl h-[80%] grid grid-cols-4 grid-rows-2 gap-4 pb-6">
                                 {STAGES_DATA[currentStage].map((terrain, index) => (
                                     <div 
@@ -205,12 +193,10 @@
                                             ${revealedCards[index] ? 'border-green-500 scale-[0.98]' : 'border-black'}
                                         `}
                                     >
-                                        {/* 배경 아이콘 (지형을 뜻하는 이모지를 배경 그림처럼 크게 배치) */}
                                         <span className="text-[12rem] opacity-40 select-none">
                                             {TERRAIN_TYPES[terrain].icon}
                                         </span>
 
-                                        {/* 터치 시 나타나는 굵은 글씨 ("하천", "산지" 등) */}
                                         {revealedCards[index] && (
                                             <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm">
                                                 <span className="text-[7rem] font-black text-white text-stroke animate-pop tracking-widest drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)]"
