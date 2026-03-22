@@ -37,13 +37,29 @@
         .animate-pop {
             animation: popText 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
+
+        /* 하단 컨트롤 바 고정 스타일 */
+        .bottom-controls-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.95);
+            border-top: 4px solid black;
+            padding: 1rem 2.5rem 1.5rem 2.5rem; /* 하단 패딩을 충분히 줌 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1.5rem;
+            z-index: 100;
+        }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useRef } = React;
+        const { useState, useEffect, useRef } = React;
 
         const TERRAIN_TYPES = {
             '산지': { icon: '⛰️', color: 'bg-green-100' },
@@ -61,11 +77,14 @@
         ];
 
         function App() {
-            const [gameState, setGameState] = useState('ready'); 
+            const [gameState, setGameState] = useState('ready'); // ready, playing, failed, end
             const [currentStage, setCurrentStage] = useState(0);
             const [revealedCards, setRevealedCards] = useState(Array(8).fill(false));
             const [isPlayingBgm, setIsPlayingBgm] = useState(false);
             const [showVideo, setShowVideo] = useState(false);
+            const [cardDisplayMode, setCardDisplayMode] = useState('image-only'); // image-only, image-and-text
+            const [mistakes, setMistakes] = useState(0); // 잘못된 클릭 횟수
+            const [stageTimeLeft, setStageTimeLeft] = useState(6); // 각 단계 남은 시간
             
             const ytRef = useRef(null);
 
@@ -82,6 +101,8 @@
                 setGameState('playing');
                 setCurrentStage(0);
                 setRevealedCards(Array(8).fill(false));
+                setMistakes(0); // 실수 초기화
+                setStageTimeLeft(6); // 타이머 초기화
                 
                 // 게임 시작 시 유튜브 영상 0초로 되돌리고 재생
                 sendYTCmd('seekTo', [0, true]);
@@ -89,23 +110,38 @@
                 setIsPlayingBgm(true);
             };
 
+            const restartGame = () => {
+                setGameState('ready'); // 대기 화면으로 초기화
+                sendYTCmd('pauseVideo'); // 비디오 정지
+                setIsPlayingBgm(false);
+            };
+
             const toggleCard = (index) => {
+                if (gameState !== 'playing') return; // 게임 플레이 중일 때만 카드 터치 가능
                 const newRevealed = [...revealedCards];
                 newRevealed[index] = !newRevealed[index];
                 setRevealedCards(newRevealed);
+
+                // 오답 클릭 시 실수 카운트 (예시 로직: 뒤집은 카드가 "하천"이 아닐 때)
+                if (newRevealed[index] && STAGES_DATA[currentStage][index] !== '하천') {
+                   setMistakes(prev => prev + 1);
+                   if (mistakes >= 2) { // 3번 실수하면 실패
+                       setGameState('failed');
+                       sendYTCmd('pauseVideo');
+                       setIsPlayingBgm(false);
+                   }
+                }
             };
 
             const nextStage = () => {
                 if (currentStage < 4) {
                     setCurrentStage(prev => prev + 1);
                     setRevealedCards(Array(8).fill(false));
-                }
-            };
-
-            const prevStage = () => {
-                if (currentStage > 0) {
-                    setCurrentStage(prev => prev - 1);
-                    setRevealedCards(Array(8).fill(false));
+                    setStageTimeLeft(6); // 새 단계 시작 시 타이머 초기화
+                } else {
+                    setGameState('end'); // 마지막 단계 끝나면 게임 종료
+                    sendYTCmd('pauseVideo');
+                    setIsPlayingBgm(false);
                 }
             };
 
@@ -118,13 +154,35 @@
                 setIsPlayingBgm(!isPlayingBgm);
             };
 
+            // 자동 단계 넘기기 로직
+            useEffect(() => {
+                if (gameState === 'playing') {
+                    // 1초마다 남은 시간 감소
+                    const timerId = setInterval(() => {
+                        setStageTimeLeft(prev => prev - 1);
+                    }, 1000);
+
+                    // 6초 후 다음 단계로 이동
+                    const timeoutId = setTimeout(() => {
+                        nextStage();
+                        clearInterval(timerId); // 타이머 클리어
+                    }, 6000);
+
+                    // 컴포넌트 언마운트 또는 상태 변경 시 타이머 클리어
+                    return () => {
+                        clearTimeout(timeoutId);
+                        clearInterval(timerId);
+                    };
+                }
+            }, [currentStage, gameState]); // 단계나 게임 상태가 바뀔 때마다 타이머 재설정
+
             return (
-                <div className="w-full h-full flex flex-col items-center justify-center relative">
+                <div className="w-full h-full flex flex-col relative overflow-hidden">
                     
                     {/* 유튜브 Iframe (숨기기/보이기 기능 지원) */}
                     <iframe 
                         ref={ytRef}
-                        className={`absolute bottom-4 right-4 rounded-2xl shadow-2xl border-4 border-black transition-all duration-300 ${showVideo ? 'opacity-100 z-50 translate-y-0' : 'opacity-0 -z-10 translate-y-10 pointer-events-none'}`}
+                        className={`absolute bottom-24 right-4 rounded-2xl shadow-2xl border-4 border-black transition-all duration-300 ${showVideo ? 'opacity-100 z-50 translate-y-0' : 'opacity-0 -z-10 translate-y-10 pointer-events-none'}`}
                         width="384" 
                         height="216" 
                         src="https://www.youtube.com/embed/_RiQjsu1KIw?enablejsapi=1&controls=0&rel=0&playsinline=1" 
@@ -134,37 +192,83 @@
 
                     {/* --- 대기 화면 --- */}
                     {gameState === 'ready' && (
-                        <div className="flex flex-col items-center bg-white/95 p-12 rounded-3xl shadow-2xl z-10 border-4 border-black">
-                            <h1 className="text-7xl font-black mb-6 text-black drop-shadow-md tracking-widest">
+                        <div className="flex-grow flex flex-col items-center justify-center bg-white/95 p-12 z-10">
+                            <h1 className="text-8xl font-black mb-8 text-black drop-shadow-md tracking-widest">
                                 🎵 단어 리듬 게임 🎵
                             </h1>
-                            <p className="text-2xl text-gray-600 mb-10 text-center">
-                                '무 뽑아 장아찌~' 비트에 맞춰 화면을 터치하세요!<br/>
-                                (시작 버튼을 누르면 원본 오디오가 자동 재생됩니다)
-                            </p>
                             
+                            {/* 카드 제시 옵션 선택 */}
+                            <div className="mb-12 p-8 bg-gray-100 rounded-2xl border-4 border-black text-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                                <p className="text-4xl text-black font-bold mb-6">카드를 어떻게 보여줄까요?</p>
+                                <div className="flex gap-6 justify-center">
+                                    <button 
+                                        onClick={() => setCardDisplayMode('image-only')}
+                                        className={`px-10 py-5 text-3xl font-black rounded-xl border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:scale-105 transition-all ${cardDisplayMode === 'image-only' ? 'bg-yellow-300' : 'bg-white'}`}
+                                    >
+                                        🖼️ 그림으로만
+                                    </button>
+                                    <button 
+                                        onClick={() => setCardDisplayMode('image-and-text')}
+                                        className={`px-10 py-5 text-3xl font-black rounded-xl border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:scale-105 transition-all ${cardDisplayMode === 'image-and-text' ? 'bg-yellow-300' : 'bg-white'}`}
+                                    >
+                                        🖼️✍️ 그림과 단어로
+                                    </button>
+                                </div>
+                            </div>
+
                             <button 
                                 onClick={startGame}
-                                className="px-16 py-6 bg-yellow-400 border-4 border-black text-black font-black text-5xl rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-2 active:shadow-none transition-all"
+                                className="px-16 py-6 bg-green-500 border-4 border-black text-black font-black text-5xl rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-2 active:shadow-none transition-all"
                             >
                                 게임 시작!
                             </button>
                         </div>
                     )}
 
+                    {/* --- 미션 실패 화면 --- */}
+                    {gameState === 'failed' && (
+                        <div className="flex-grow flex flex-col items-center justify-center bg-red-100/95 p-12 z-10">
+                            <div className="text-9xl mb-8">😞</div>
+                            <h2 className="text-8xl font-black mb-10 text-red-700 drop-shadow-md tracking-widest">
+                                미션 실패!
+                            </h2>
+                            <button 
+                                onClick={restartGame}
+                                className="px-12 py-5 bg-white border-4 border-black text-black font-black text-4xl rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-2 active:shadow-none transition-all"
+                            >
+                                대기 화면으로 ◀
+                            </button>
+                        </div>
+                    )}
+
+                    {/* --- 게임 완료 화면 --- */}
+                    {gameState === 'end' && (
+                        <div className="flex-grow flex flex-col items-center justify-center bg-green-100/95 p-12 z-10">
+                            <div className="text-9xl mb-8">🎉</div>
+                            <h2 className="text-8xl font-black mb-10 text-green-700 drop-shadow-md tracking-widest">
+                                미션 성공!
+                            </h2>
+                            <button 
+                                onClick={restartGame}
+                                className="px-12 py-5 bg-white border-4 border-black text-black font-black text-4xl rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-2 active:shadow-none transition-all"
+                            >
+                                대기 화면으로 ◀
+                            </button>
+                        </div>
+                    )}
+
                     {/* --- 게임 화면 --- */}
                     {gameState === 'playing' && (
-                        <div className="w-full h-full flex flex-col items-center justify-between p-4">
-                            
+                        <>
                             {/* 상단 UI */}
-                            <div className="w-full flex justify-between items-center px-10 pt-4 h-[15%]">
+                            <div className="w-full flex justify-between items-center px-10 pt-6 h-[15%]">
                                 <div className="text-7xl drop-shadow-lg">📢</div>
                                 <div className="text-8xl font-black tracking-widest text-black drop-shadow-md flex items-center gap-4">
-                                    <button onClick={prevStage} className={`text-6xl text-gray-400 hover:text-black transition-colors ${currentStage === 0 ? 'invisible' : ''}`}>◀</button>
                                     <span>{currentStage + 1} / 5</span>
-                                    <button onClick={nextStage} className={`text-6xl text-gray-400 hover:text-black transition-colors ${currentStage === 4 ? 'invisible' : ''}`}>▶</button>
+                                    {/* 단계 남은 시간 표시 */}
+                                    <span className="text-4xl text-blue-600">({stageTimeLeft}초 남음)</span>
                                 </div>
-                                <div className="flex flex-col items-end gap-3">
+                                <div className="flex flex-col items-end gap-3 z-30">
                                     <button 
                                         onClick={toggleBgm}
                                         className="px-6 py-3 bg-black text-white rounded-full text-2xl font-bold shadow-md active:scale-95 transition-transform"
@@ -180,36 +284,53 @@
                                 </div>
                             </div>
 
-                            {/* 4x2 격자 배열 */}
-                            <div className="w-[95%] max-w-7xl h-[80%] grid grid-cols-4 grid-rows-2 gap-4 pb-6">
-                                {STAGES_DATA[currentStage].map((terrain, index) => (
-                                    <div 
-                                        key={index}
-                                        onClick={() => toggleCard(index)}
-                                        className={`
-                                            relative w-full h-full border-8 cursor-pointer flex items-center justify-center overflow-hidden
-                                            transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,0.3)]
-                                            ${TERRAIN_TYPES[terrain].color}
-                                            ${revealedCards[index] ? 'border-green-500 scale-[0.98]' : 'border-black'}
-                                        `}
-                                    >
-                                        <span className="text-[12rem] opacity-40 select-none">
-                                            {TERRAIN_TYPES[terrain].icon}
-                                        </span>
+                            {/* 4x2 격자 배열 - flex-grow를 주어 유연하게 만듦 */}
+                            <main className="flex-grow w-full flex items-center justify-center p-4 pb-32"> {/* 하단 컨트롤 바 영역 확보 */}
+                                <div className="w-[90%] max-w-7xl h-full grid grid-cols-4 grid-rows-2 gap-5">
+                                    {STAGES_DATA[currentStage].map((terrain, index) => (
+                                        <div 
+                                            key={index}
+                                            onClick={() => toggleCard(index)}
+                                            className={`
+                                                relative w-full h-full border-8 cursor-pointer flex items-center justify-center overflow-hidden
+                                                transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,0.3)]
+                                                ${TERRAIN_TYPES[terrain].color}
+                                                ${revealedCards[index] ? 'border-green-500 scale-[0.98]' : 'border-black'}
+                                            `}
+                                        >
+                                            {/* 뒤집힌 내용 - 그림/단어 옵션에 따라 다름 */}
+                                            {revealedCards[index] && (
+                                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/10 backdrop-blur-sm p-4 animate-pop">
+                                                    {/* 그림(이모지) */}
+                                                    <span className="text-[10rem] select-none mb-4">
+                                                        {TERRAIN_TYPES[terrain].icon}
+                                                    </span>
+                                                    {/* 단어 (옵션 선택 시) */}
+                                                    {cardDisplayMode === 'image-and-text' && (
+                                                        <span className="text-[4rem] font-black text-white text-stroke tracking-widest drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]"
+                                                              style={{ WebkitTextStroke: '2px black' }}>
+                                                            {terrain}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </main>
 
-                                        {revealedCards[index] && (
-                                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm">
-                                                <span className="text-[7rem] font-black text-white text-stroke animate-pop tracking-widest drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)]"
-                                                      style={{ WebkitTextStroke: '4px black' }}>
-                                                    {terrain}
-                                                </span>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
+                            {/* 하단 컨트롤 바 (절대 잘리지 않게 고정) */}
+                            <div className="bottom-controls-bar">
+                                <div className="text-3xl font-bold text-gray-700">미션: <span className="text-red-600">"하천"</span> 뒤집기</div>
+                                <div className="text-3xl font-bold text-gray-700">실수: <span className="text-red-600">{mistakes}</span> / 3</div>
+                                <button 
+                                    onClick={restartGame}
+                                    className="px-10 py-4 bg-white border-4 border-black text-black font-black text-3xl rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-1.5 active:shadow-none transition-all"
+                                >
+                                    다시 시작 ◀
+                                </button>
                             </div>
-
-                        </div>
+                        </>
                     )}
                 </div>
             );
