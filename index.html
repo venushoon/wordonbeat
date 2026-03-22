@@ -28,26 +28,26 @@
             user-select: none;
         }
 
-        /* [수정됨] 박자에 맞춰 0% 시점에 가장 팽창하고 강하게 강조되는 Snap 애니메이션 */
+        /* 0.34초의 매우 빠른 비트에 맞춘 강력한 Snap 애니메이션 */
         @keyframes beatSnap {
-            0% { transform: scale(1.1); border-color: #ef4444; box-shadow: 0 0 35px rgba(239, 68, 68, 1); }
-            100% { transform: scale(1.02); border-color: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+            0% { transform: scale(1.15); border-color: #ef4444; box-shadow: 0 0 40px rgba(239, 68, 68, 1); }
+            100% { transform: scale(1.0); border-color: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.4); }
         }
         .highlight-beat {
-            animation: beatSnap 0.4s cubic-bezier(0.1, 0.9, 0.2, 1) forwards; /* 빠르고 날카로운 곡선 */
+            animation: beatSnap 0.3s cubic-bezier(0.1, 0.9, 0.2, 1) forwards !important;
             border-color: #ef4444 !important;
             z-index: 20;
             opacity: 1 !important;
         }
 
-        /* 내부 컨텐츠가 튀어오르는 효과 */
+        /* 텍스트 팝업 */
         @keyframes contentPop {
-            0% { transform: scale(0.8); }
+            0% { transform: scale(0.85); }
             50% { transform: scale(1.1); }
             100% { transform: scale(1); }
         }
         .content-active {
-            animation: contentPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            animation: contentPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
 
         .responsive-emoji {
@@ -85,20 +85,20 @@
             ['하천', '평야', '해안', '산지', '평야', '하천', '산지', '해안']  // 5단계
         ];
 
-        // 기본 템포 설정
-        const BASE_INTRO_DURATION = 2700; // 기본 인트로 시간 (2.7초)
-        const STAGE_DURATION = 5450;      // 1단계 총 시간 (5.45초)
-        const BEAT_DURATION = STAGE_DURATION / 8; // 1칸 이동 시간 (약 681ms)
+        // 🔥 선생님의 지적대로 수정한 초정밀 16비트 템포 세팅
+        const BASE_INTRO_DURATION = 2727; // 인트로 대기 시간 (약 8비트)
+        const STAGE_DURATION = 5454;      // 1단계 총 시간 (5.45초)
+        const BEATS_PER_STAGE = 16;       // 8개의 카드를 2번 반복 = 16비트
+        const BEAT_DURATION = STAGE_DURATION / BEATS_PER_STAGE; // 1칸 이동 시간 (약 340.8ms - 엄청 빠른 릴스 속도!)
 
         function App() {
             const [gameState, setGameState] = useState('ready'); 
             const [currentStage, setCurrentStage] = useState(0);
             const [showVideo, setShowVideo] = useState(false);
             const [cardDisplayMode, setCardDisplayMode] = useState('image-and-text'); 
+            const [syncOffset, setSyncOffset] = useState(200); // 유튜브 로딩 보정치
             
-            // 🔥 싱크 조절 상태 (초기값: 유튜브 네트워크 딜레이를 고려한 기본 +200ms 보정)
-            const [syncOffset, setSyncOffset] = useState(200); 
-
+            // highlightIndex는 0~7 사이를 반복함
             const [highlightIndex, setHighlightIndex] = useState(-1);
             const [timerKey, setTimerKey] = useState(0); 
             
@@ -120,13 +120,12 @@
                 sendYTCmd('seekTo', [0, true]);
                 sendYTCmd('playVideo');
 
-                // 싱크 오프셋이 적용된 정확한 인트로 타임아웃
                 const exactIntroDuration = BASE_INTRO_DURATION + syncOffset;
 
                 setTimeout(() => {
                     setGameState('playing');
                     setTimerKey(prev => prev + 1); 
-                }, Math.max(0, exactIntroDuration)); // 음수가 되지 않도록 방어
+                }, Math.max(0, exactIntroDuration)); 
             };
 
             const restartGame = () => {
@@ -149,29 +148,31 @@
                 });
             };
 
-            // 🎵 초정밀 절대 시간 기반 렌더링 루프 (`setInterval` 제거)
+            // 🎵 선생님 피드백 완벽 반영: 16비트(8칸 2바퀴) 회전 로직
             useEffect(() => {
                 let animationFrameId;
                 let startTime;
 
                 if (gameState === 'playing') {
                     startTime = Date.now();
-                    setHighlightIndex(0); // 루프 시작 즉시 첫 칸 활성화
-
+                    
                     const checkBeat = () => {
                         const elapsed = Date.now() - startTime;
 
                         if (elapsed >= STAGE_DURATION) {
                             nextStage();
-                            return; // 현재 루프 종료, 다음 단계 시작
+                            return; 
                         }
 
-                        // 경과 시간을 기준으로 정확한 현재 칸 계산
-                        const newIndex = Math.floor(elapsed / BEAT_DURATION);
+                        // 경과 시간을 1비트(0.34초) 단위로 나누어 현재 몇 번째 비트인지 계산
+                        const currentBeat = Math.floor(elapsed / BEAT_DURATION);
+                        
+                        // 8칸을 2번 반복하므로 모듈러(%) 8을 사용해 0~7 인덱스 무한 순환
+                        const targetCardIndex = currentBeat % 8;
                         
                         setHighlightIndex(prev => {
-                            if (prev !== newIndex && newIndex < 8) {
-                                return newIndex;
+                            if (prev !== targetCardIndex) {
+                                return targetCardIndex;
                             }
                             return prev;
                         });
@@ -188,7 +189,6 @@
             return (
                 <div className="w-screen h-screen flex flex-col relative overflow-hidden text-gray-800">
                     
-                    {/* 유튜브 Iframe */}
                     <iframe 
                         ref={ytRef}
                         className={`absolute bottom-[14vh] right-6 rounded-2xl shadow-2xl border-4 border-black transition-all duration-300 ${showVideo ? 'opacity-100 z-50 translate-y-0' : 'opacity-0 -z-10 translate-y-10 pointer-events-none'}`}
@@ -199,7 +199,6 @@
                         allow="autoplay; encrypted-media"
                     ></iframe>
 
-                    {/* --- 대기/인트로/성공 화면 오버레이 --- */}
                     {gameState !== 'playing' && (
                         <div className={`absolute inset-0 z-50 flex flex-col items-center justify-center p-12 transition-colors duration-300 ${gameState === 'intro' ? 'bg-yellow-300' : 'bg-white/95'}`}>
                             
@@ -209,64 +208,27 @@
                                         🎵 단어 리듬 게임 🎵
                                     </h1>
                                     
-                                    {/* 화면 제시 방식 선택 */}
                                     <div className="mb-6 p-6 bg-gray-100 rounded-3xl border-4 border-black text-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                                         <p className="text-2xl md:text-3xl text-black font-bold mb-6">화면 제시 방식</p>
                                         <div className="flex flex-wrap gap-4 justify-center">
-                                            <button 
-                                                onClick={() => setCardDisplayMode('image-only')}
-                                                className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'image-only' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}
-                                            >
-                                                🖼️ 그림만
-                                            </button>
-                                            <button 
-                                                onClick={() => setCardDisplayMode('image-and-text')}
-                                                className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'image-and-text' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}
-                                            >
-                                                🖼️✍️ 그림+단어
-                                            </button>
-                                            <button 
-                                                onClick={() => setCardDisplayMode('text-only')}
-                                                className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'text-only' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}
-                                            >
-                                                ✍️ 단어만
-                                            </button>
+                                            <button onClick={() => setCardDisplayMode('image-only')} className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'image-only' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}>🖼️ 그림만</button>
+                                            <button onClick={() => setCardDisplayMode('image-and-text')} className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'image-and-text' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}>🖼️✍️ 그림+단어</button>
+                                            <button onClick={() => setCardDisplayMode('text-only')} className={`px-6 py-3 text-2xl font-black rounded-xl border-4 border-black transition-all ${cardDisplayMode === 'text-only' ? 'bg-yellow-400 shadow-none translate-y-1' : 'bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-yellow-50'}`}>✍️ 단어만</button>
                                         </div>
                                     </div>
 
-                                    {/* 🔥 오디오 싱크 조절 패널 */}
                                     <div className="mb-10 p-4 bg-blue-50 rounded-2xl border-4 border-blue-200 flex flex-col items-center">
                                         <div className="text-xl font-bold text-blue-800 mb-2">
-                                            ⚙️ 오디오 싱크 맞추기 <span className="text-sm font-normal text-gray-500">(테두리 움직임과 소리가 안 맞을 때)</span>
+                                            ⚙️ 오디오 싱크 맞추기 <span className="text-sm font-normal text-gray-500">(소리가 늦으면 +, 빠르면 -)</span>
                                         </div>
                                         <div className="flex items-center gap-6">
-                                            <button 
-                                                onClick={() => setSyncOffset(o => o - 100)}
-                                                className="px-4 py-2 bg-white border-2 border-black rounded-lg font-bold text-xl active:bg-gray-200"
-                                            >
-                                                -100ms
-                                            </button>
-                                            <div className="text-2xl font-black min-w-[120px] text-center">
-                                                {syncOffset > 0 ? `+${syncOffset}` : syncOffset} ms
-                                            </div>
-                                            <button 
-                                                onClick={() => setSyncOffset(o => o + 100)}
-                                                className="px-4 py-2 bg-white border-2 border-black rounded-lg font-bold text-xl active:bg-gray-200"
-                                            >
-                                                +100ms
-                                            </button>
-                                        </div>
-                                        <div className="text-sm text-blue-600 mt-2">
-                                            * 소리가 화면보다 늦으면 '+' / 소리가 빠르면 '-'
+                                            <button onClick={() => setSyncOffset(o => o - 100)} className="px-4 py-2 bg-white border-2 border-black rounded-lg font-bold text-xl active:bg-gray-200">-100ms</button>
+                                            <div className="text-2xl font-black min-w-[120px] text-center">{syncOffset > 0 ? `+${syncOffset}` : syncOffset} ms</div>
+                                            <button onClick={() => setSyncOffset(o => o + 100)} className="px-4 py-2 bg-white border-2 border-black rounded-lg font-bold text-xl active:bg-gray-200">+100ms</button>
                                         </div>
                                     </div>
 
-                                    <button 
-                                        onClick={startGame}
-                                        className="px-16 py-6 bg-green-500 border-4 border-black text-black font-black text-5xl md:text-6xl rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] active:translate-y-2 active:shadow-none transition-all"
-                                    >
-                                        시작하기!
-                                    </button>
+                                    <button onClick={startGame} className="px-16 py-6 bg-green-500 border-4 border-black text-black font-black text-5xl md:text-6xl rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] active:translate-y-2 active:shadow-none transition-all">시작하기!</button>
                                 </>
                             )}
 
@@ -289,7 +251,6 @@
                         </div>
                     )}
 
-                    {/* --- 상단 헤더 영역 --- */}
                     <header className="h-[12vh] shrink-0 flex justify-between items-center px-6 md:px-10 border-b-4 border-gray-300 bg-white shadow-sm z-10">
                         <div className="text-5xl md:text-6xl drop-shadow-md">📢</div>
                         
@@ -301,15 +262,10 @@
                                 <div 
                                     key={timerKey} 
                                     className="h-full bg-blue-500 rounded-full"
-                                    style={{
-                                        width: '0%',
-                                        animation: gameState === 'playing' ? `shrink ${STAGE_DURATION}ms linear forwards` : 'none'
-                                    }}
+                                    style={{ width: '0%', animation: gameState === 'playing' ? `shrink ${STAGE_DURATION}ms linear forwards` : 'none' }}
                                 ></div>
                             </div>
-                            <style>
-                                {`@keyframes shrink { from { width: 100%; } to { width: 0%; } }`}
-                            </style>
+                            <style>{`@keyframes shrink { from { width: 100%; } to { width: 0%; } }`}</style>
                         </div>
 
                         <div className="flex items-center">
@@ -319,10 +275,10 @@
                         </div>
                     </header>
 
-                    {/* --- 메인 카드 영역 (터치 불가, 자동 하이라이트 표시) --- */}
                     <main className="flex-1 min-h-0 w-full flex items-center justify-center p-4 bg-slate-100/50">
                         <div className="w-full h-full max-w-7xl max-h-[80vh] grid grid-cols-4 grid-rows-2 gap-3 md:gap-5">
                             {STAGES_DATA[currentStage].map((terrain, index) => {
+                                // 현재 순환하는 인덱스와 카드 위치가 일치하는지 확인
                                 const isHighlighted = index === highlightIndex;
 
                                 return (
@@ -330,7 +286,7 @@
                                         key={index}
                                         className={`
                                             relative w-full h-full rounded-xl border-[6px] md:border-8 overflow-hidden
-                                            transition-colors duration-100 shadow-sm
+                                            transition-colors duration-[50ms] shadow-sm
                                             ${TERRAIN_TYPES[terrain].color}
                                             ${isHighlighted ? 'highlight-beat' : 'border-gray-800 opacity-60'}
                                         `}
@@ -357,15 +313,11 @@
                         </div>
                     </main>
 
-                    {/* --- 하단 컨트롤 바 영역 --- */}
                     <footer className="h-[12vh] shrink-0 bg-white border-t-4 border-gray-300 flex justify-between items-center px-6 md:px-12 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
                         <div className="text-3xl md:text-4xl font-black text-red-500 tracking-wider flex-1 text-center animate-pulse">
-                            🎤 비트에 맞춰 붉은 칸을 큰 소리로 외쳐요!
+                            🎤 비트에 맞춰 붉은 칸을 큰 소리로 외쳐요! (8칸 x 2번 반복)
                         </div>
-                        <button 
-                            onClick={restartGame}
-                            className="px-6 py-3 md:px-8 md:py-4 bg-gray-100 border-4 border-black text-black font-black text-2xl md:text-3xl rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-gray-200 active:translate-y-1 active:shadow-none transition-all"
-                        >
+                        <button onClick={restartGame} className="px-6 py-3 md:px-8 md:py-4 bg-gray-100 border-4 border-black text-black font-black text-2xl md:text-3xl rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-gray-200 active:translate-y-1 active:shadow-none transition-all">
                             처음으로 🔄
                         </button>
                     </footer>
