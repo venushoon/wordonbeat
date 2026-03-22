@@ -26,7 +26,7 @@
             user-select: none;
         }
 
-        /* 칼같은 0.375초 비트 타격감 */
+        /* 칼같은 비트 타격감 */
         @keyframes beatSnap {
             0% { transform: scale(1.1); border-color: #ef4444; box-shadow: 0 0 35px rgba(239, 68, 68, 0.8); }
             100% { transform: scale(1.0); border-color: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
@@ -80,13 +80,12 @@
             ['하천', '평야', '해안', '산지', '평야', '하천', '산지', '해안']  // 5단계
         ];
 
-        // 🔥 수학적으로 완벽하게 계산된 오디오 그리드 (160 BPM 기준)
-        const INTRO_VOCALS_END = 3.000; // "원투쓰리고!" 까지 (8박자)
-        const GAME_START_TIME = 6.000;  // "삑삑삑삑 삑삑삑삑" 종료 시점 (정확히 16박자 이후 본게임 시작!)
-        const BEAT_DURATION = 0.375;    // 1박자 = 0.375초 (1칸 이동 시간)
+        // 🔥 수학적으로 계산된 가장 정확한 8박자 스타트 엔진
+        const BEAT_DURATION = 0.341; // 176 BPM 기준 1박자 (약 0.341초)
+        const GAME_START_TIME = BEAT_DURATION * 8; // 정확히 8박자 쉬고(약 2.73초) 바로 본 게임 진입!
 
         function App() {
-            // 게임 상태: ready -> vocals(원투쓰리고) -> preparing(삑삑 대기) -> playing(본게임) -> end
+            // 게임 상태: ready -> preparing(8박자 대기) -> playing(본게임) -> end
             const [gameState, setGameState] = useState('ready'); 
             const [currentStage, setCurrentStage] = useState(0);
             const [cardDisplayMode, setCardDisplayMode] = useState('image-and-text'); 
@@ -102,7 +101,7 @@
                     if (gameState !== 'ready' && gameState !== 'end' && audioRef.current && !audioRef.current.paused) {
                         const t = audioRef.current.currentTime;
 
-                        // 1. 본 게임 시작 (6.0초 이후)
+                        // 1. 본 게임 시작 (8박자 이후)
                         if (t >= GAME_START_TIME) {
                             if (gameState !== 'playing') setGameState('playing');
                             
@@ -126,14 +125,9 @@
                             const targetIndex = totalBeatsElapsed % 8;
                             setHighlightIndex(prev => prev !== targetIndex ? targetIndex : prev);
                         } 
-                        // 2. 준비 삑삑 구간 (3.0초 ~ 6.0초) - 하이라이트 끄기
-                        else if (t >= INTRO_VOCALS_END && t < GAME_START_TIME) {
-                            if (gameState !== 'preparing') setGameState('preparing');
-                            setHighlightIndex(-1);
-                        }
-                        // 3. 인트로 보컬 구간 (0초 ~ 3.0초) - 하이라이트 끄기
+                        // 2. 준비 구간 (시작 ~ 8박자까지) - 카드는 보이지만 하이라이트 없음
                         else {
-                            if (gameState !== 'vocals') setGameState('vocals');
+                            if (gameState !== 'preparing') setGameState('preparing');
                             setHighlightIndex(-1);
                         }
                     }
@@ -159,7 +153,7 @@
                 if (audioRef.current) {
                     setCurrentStage(0);
                     setHighlightIndex(-1);
-                    setGameState('vocals');
+                    setGameState('preparing');
                     
                     audioRef.current.currentTime = 0;
                     audioRef.current.play().catch(error => {
@@ -231,14 +225,9 @@
                         
                         <div className="flex-1 flex flex-col items-center justify-center">
                             {/* 게임 진행 상태에 따른 직관적인 메시지 표시 */}
-                            {gameState === 'vocals' && (
-                                <div className="text-4xl font-black text-slate-800 animate-pulse">
-                                    🎤 원! 투! 쓰리! 고!
-                                </div>
-                            )}
                             {gameState === 'preparing' && (
                                 <div className="text-3xl font-black text-red-500 animate-pulse bg-red-50 px-8 py-3 rounded-full border border-red-200">
-                                    👀 카드를 미리 읽어보며 리듬을 타세요!
+                                    👀 8박자 대기 중... 카드를 미리 읽어두세요!
                                 </div>
                             )}
                             {gameState === 'playing' && (
