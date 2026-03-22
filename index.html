@@ -13,7 +13,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
 
     <style>
-        /* 기본 설정: 화면 잘림 방지 및 터치 최적화 */
+        /* 화면 잘림 방지 및 터치 최적화 */
         body {
             margin: 0;
             padding: 0;
@@ -21,30 +21,25 @@
             height: 100vh;
             overflow: hidden;
             font-family: 'Jua', sans-serif;
-            background-color: #f0fdf4;
-            /* 터치 시 확대 방지 및 드래그 방지 */
+            background-color: #f1f5f9;
+            /* 종이 질감 배경 효과 */
+            background-image: radial-gradient(#cbd5e1 1px, transparent 0);
+            background-size: 40px 40px;
+            /* 터치 간섭 완벽 차단 */
             touch-action: none;
             -webkit-user-select: none;
             user-select: none;
             -webkit-touch-callout: none;
         }
 
-        /* 비트를 타는 듯한 통통 튀는 애니메이션 */
-        @keyframes beatPulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.08); }
+        /* 텍스트 등장 애니메이션 */
+        @keyframes popText {
+            0% { transform: scale(0.5); opacity: 0; }
+            80% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
         }
-        .animate-beat {
-            animation: beatPulse 0.5s infinite ease-in-out;
-        }
-        
-        /* 버튼 등장 애니메이션 */
-        @keyframes popIn {
-            0% { opacity: 0; transform: scale(0.5); }
-            100% { opacity: 1; transform: scale(1); }
-        }
-        .pop-in {
-            animation: popIn 0.3s ease-out forwards;
+        .animate-pop {
+            animation: popText 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
     </style>
 </head>
@@ -52,170 +47,184 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useCallback } = React;
+        const { useState, useEffect, useRef } = React;
 
-        // 1. 24개의 충분한 문제 데이터 배열 (하드코딩)
-        const WORD_DATA = [
-            { id: 1, word: '🏔️ 지리산', category: '산지' },
-            { id: 2, word: '⛰️ 태백산맥', category: '산지' },
-            { id: 3, word: '🗻 한라산', category: '산지' },
-            { id: 4, word: '🧗 북한산', category: '산지' },
-            { id: 5, word: '고개와 계곡', category: '산지' },
-            { id: 6, word: '울창한 숲', category: '산지' },
-            
-            { id: 7, word: '💧 한강', category: '하천' },
-            { id: 8, word: '🌊 낙동강', category: '하천' },
-            { id: 9, word: '🛶 금강', category: '하천' },
-            { id: 10, word: '물줄기', category: '하천' },
-            { id: 11, word: '맑은 냇물', category: '하천' },
-            { id: 12, word: '영산강', category: '하천' },
-            
-            { id: 13, word: '🌾 호남평야', category: '평야' },
-            { id: 14, word: '🚜 나주평야', category: '평야' },
-            { id: 15, word: '넓은 들판', category: '평야' },
-            { id: 16, word: '논과 밭', category: '평야' },
-            { id: 17, word: '김포평야', category: '평야' },
-            { id: 18, word: '풍년 곡창지대', category: '평야' },
-            
-            { id: 19, word: '🦀 갯벌', category: '해안' },
-            { id: 20, word: '🏖️ 모래사장', category: '해안' },
-            { id: 21, word: '🌊 리아스식', category: '해안' },
-            { id: 22, word: '아름다운 섬', category: '해안' },
-            { id: 23, word: '깎아지른 절벽', category: '해안' },
-            { id: 24, word: '항구와 배', category: '해안' }
+        // 지형 데이터 (그림 대신 이모지와 배경색으로 구분하여 즉시 실행 가능하도록 구성)
+        const TERRAIN_TYPES = {
+            '산지': { icon: '⛰️', color: 'bg-green-100' },
+            '하천': { icon: '🏞️', color: 'bg-blue-100' },
+            '평야': { icon: '🌾', color: 'bg-yellow-100' },
+            '해안': { icon: '🏖️', color: 'bg-cyan-100' }
+        };
+
+        // 5단계 데이터 생성 (각 단계별 8칸 - 4x2 배열)
+        const STAGES_DATA = [
+            ['하천', '하천', '하천', '하천', '산지', '하천', '산지', '하천'], // 1단계
+            ['평야', '산지', '평야', '평야', '하천', '평야', '산지', '평야'], // 2단계
+            ['해안', '해안', '산지', '해안', '해안', '하천', '해안', '해안'], // 3단계
+            ['산지', '산지', '하천', '평야', '산지', '산지', '해안', '산지'], // 4단계
+            ['하천', '평야', '해안', '산지', '평야', '하천', '산지', '해안']  // 5단계 (랜덤 심화)
         ];
 
-        const CATEGORIES = ['산지', '하천', '평야', '해안'];
-        const GAME_TIME = 60; // 게임 시간 60초
-
         function App() {
-            const [gameState, setGameState] = useState('ready'); // ready, playing, end
-            const [score, setScore] = useState(0);
-            const [timeLeft, setTimeLeft] = useState(GAME_TIME);
-            const [targetCategory, setTargetCategory] = useState('');
-            const [currentOptions, setCurrentOptions] = useState([]);
+            const [gameState, setGameState] = useState('ready'); // ready, playing
+            const [currentStage, setCurrentStage] = useState(0);
+            const [revealedCards, setRevealedCards] = useState(Array(8).fill(false));
+            const [isPlayingBgm, setIsPlayingBgm] = useState(false);
+            
+            const audioRef = useRef(null);
+            const fileInputRef = useRef(null);
 
-            // 보기(정답 1 + 오답 3) 생성 함수
-            const generateQuestion = useCallback(() => {
-                // 1. 무작위 타겟 카테고리 선정
-                const target = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
-                setTargetCategory(target);
+            // BGM 파일 업로드 처리
+            const handleAudioUpload = (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const audioUrl = URL.createObjectURL(file);
+                    audioRef.current.src = audioUrl;
+                }
+            };
 
-                // 2. 정답 1개 뽑기
-                const correctWords = WORD_DATA.filter(w => w.category === target);
-                const correctWord = correctWords[Math.floor(Math.random() * correctWords.length)];
-
-                // 3. 오답 3개 뽑기 (타겟이 아닌 카테고리에서)
-                const wrongWords = WORD_DATA.filter(w => w.category !== target);
-                const shuffledWrongs = [...wrongWords].sort(() => 0.5 - Math.random());
-                const selectedWrongs = shuffledWrongs.slice(0, 3);
-
-                // 4. 보기 섞기 및 위치(화면 퍼센트) 무작위 배정
-                const options = [correctWord, ...selectedWrongs].sort(() => 0.5 - Math.random());
-                
-                // 전자칠판에서 잘리지 않도록 안전 여백을 둔 무작위 좌표 생성 (Top: 20~70%, Left: 10~70%)
-                const positionedOptions = options.map(opt => ({
-                    ...opt,
-                    top: Math.floor(Math.random() * 50) + 20 + '%',
-                    left: Math.floor(Math.random() * 60) + 10 + '%'
-                }));
-
-                setCurrentOptions(positionedOptions);
-            }, []);
-
-            // 게임 시작
+            // 게임 시작 및 BGM 재생
             const startGame = () => {
-                setScore(0);
-                setTimeLeft(GAME_TIME);
                 setGameState('playing');
-                generateQuestion();
+                setCurrentStage(0);
+                setRevealedCards(Array(8).fill(false));
+                
+                if (audioRef.current) {
+                    audioRef.current.play().catch(e => console.log("오디오 자동재생 제한됨", e));
+                    setIsPlayingBgm(true);
+                }
             };
 
-            // 정답 클릭 처리
-            const handleWordClick = (wordCategory) => {
-                if (wordCategory === targetCategory) {
-                    setScore(prev => prev + 10);
-                    generateQuestion(); // 정답 시 바로 다음 문제로
+            // 카드 터치 시 글자 보이기/숨기기 토글
+            const toggleCard = (index) => {
+                const newRevealed = [...revealedCards];
+                newRevealed[index] = !newRevealed[index];
+                setRevealedCards(newRevealed);
+            };
+
+            // 다음 단계로 이동
+            const nextStage = () => {
+                if (currentStage < 4) {
+                    setCurrentStage(prev => prev + 1);
+                    setRevealedCards(Array(8).fill(false)); // 카드 초기화
+                }
+            };
+
+            // 이전 단계로 이동
+            const prevStage = () => {
+                if (currentStage > 0) {
+                    setCurrentStage(prev => prev - 1);
+                    setRevealedCards(Array(8).fill(false));
+                }
+            };
+
+            // BGM 재생/일시정지 제어
+            const toggleBgm = () => {
+                if (audioRef.current.paused) {
+                    audioRef.current.play();
+                    setIsPlayingBgm(true);
                 } else {
-                    // 오답 시 시간 3초 감소 페널티
-                    setTimeLeft(prev => Math.max(0, prev - 3));
+                    audioRef.current.pause();
+                    setIsPlayingBgm(false);
                 }
             };
-
-            // 타이머 로직
-            useEffect(() => {
-                let timer;
-                if (gameState === 'playing' && timeLeft > 0) {
-                    timer = setInterval(() => {
-                        setTimeLeft(prev => prev - 1);
-                    }, 1000);
-                } else if (timeLeft === 0 && gameState === 'playing') {
-                    setGameState('end');
-                }
-                return () => clearInterval(timer);
-            }, [gameState, timeLeft]);
 
             return (
-                <div className="w-full h-full relative overflow-hidden bg-gradient-to-br from-green-100 via-blue-100 to-purple-100 flex flex-col items-center justify-center">
+                <div className="w-full h-full flex flex-col items-center justify-center relative">
                     
-                    {/* 대기 화면 */}
+                    {/* 숨겨진 오디오 태그 (기본 무료 비트 제공, 파일 업로드 시 교체됨) */}
+                    <audio 
+                        ref={audioRef} 
+                        loop 
+                        src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" 
+                        preload="auto"
+                    />
+
+                    {/* --- 대기 화면 --- */}
                     {gameState === 'ready' && (
-                        <div className="text-center z-10 p-8 bg-white/80 rounded-3xl shadow-2xl pop-in">
-                            <h1 className="text-7xl font-bold text-blue-600 mb-6 drop-shadow-md">🎵 비트 온 지형! 🎵</h1>
-                            <p className="text-3xl text-gray-700 mb-8">리듬에 맞춰 알맞은 지형 단어를 터치하세요!</p>
+                        <div className="flex flex-col items-center bg-white/90 p-10 rounded-3xl shadow-2xl z-10 border-4 border-black">
+                            <h1 className="text-7xl font-black mb-8 text-black drop-shadow-md tracking-widest">
+                                🎵 단어 리듬 게임 🎵
+                            </h1>
+                            
+                            <div className="mb-8 p-6 bg-gray-100 rounded-xl border-2 border-dashed border-gray-400 text-center">
+                                <p className="text-2xl text-gray-700 mb-4">🎶 원하시는 인스타 릴스 음악(MP3)이 있다면 넣어주세요!</p>
+                                <p className="text-xl text-gray-500 mb-4">(선택 안 하시면 기본 비트가 재생됩니다)</p>
+                                <input 
+                                    type="file" 
+                                    accept="audio/*" 
+                                    onChange={handleAudioUpload}
+                                    ref={fileInputRef}
+                                    className="block w-full text-xl text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-full file:border-0 file:text-xl file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                                />
+                            </div>
+
                             <button 
                                 onClick={startGame}
-                                className="px-12 py-6 bg-gradient-to-r from-pink-500 to-orange-400 text-white text-4xl rounded-full shadow-lg hover:scale-105 active:scale-95 transition-transform"
+                                className="px-16 py-6 bg-yellow-400 border-4 border-black text-black font-black text-5xl rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-2 active:shadow-none transition-all"
                             >
-                                게임 시작
+                                게임 시작!
                             </button>
                         </div>
                     )}
 
-                    {/* 게임 플레이 화면 */}
+                    {/* --- 게임 화면 --- */}
                     {gameState === 'playing' && (
-                        <>
-                            {/* 상단 UI (점수, 타겟, 남은 시간) */}
-                            <div className="absolute top-0 w-full p-6 flex justify-between items-center bg-white/90 shadow-md z-20">
-                                <div className="text-4xl text-blue-700">점수: <span className="text-5xl font-bold text-pink-500">{score}</span></div>
-                                <div className="text-5xl font-bold text-gray-800 animate-pulse">
-                                    <span className="text-blue-600">[{targetCategory}]</span> 찾기!
+                        <div className="w-full h-full flex flex-col items-center justify-between p-4">
+                            
+                            {/* 상단 UI (메가폰, 단계 표시, 번개) */}
+                            <div className="w-full flex justify-between items-center px-10 pt-4 h-[15%]">
+                                <div className="text-7xl drop-shadow-lg">📢</div>
+                                <div className="text-8xl font-black tracking-widest text-black drop-shadow-md flex items-center gap-4">
+                                    <button onClick={prevStage} className={`text-6xl text-gray-400 hover:text-black transition-colors ${currentStage === 0 ? 'invisible' : ''}`}>◀</button>
+                                    <span>{currentStage + 1} / 5</span>
+                                    <button onClick={nextStage} className={`text-6xl text-gray-400 hover:text-black transition-colors ${currentStage === 4 ? 'invisible' : ''}`}>▶</button>
                                 </div>
-                                <div className={`text-4xl ${timeLeft <= 10 ? 'text-red-600 animate-bounce' : 'text-gray-700'}`}>
-                                    시간: <span className="text-5xl font-bold">{timeLeft}</span>초
+                                <div className="flex flex-col items-center">
+                                    <div className="text-7xl drop-shadow-lg mb-2">⚡</div>
+                                    <button 
+                                        onClick={toggleBgm}
+                                        className="px-4 py-2 bg-black text-white rounded-full text-xl font-bold shadow-md active:scale-95"
+                                    >
+                                        {isPlayingBgm ? '음악 끄기 ⏸️' : '음악 켜기 ▶️'}
+                                    </button>
                                 </div>
                             </div>
 
-                            {/* 떠다니는 단어 버튼들 (리듬감 애니메이션 추가) */}
-                            <div className="w-full h-full relative mt-20">
-                                {currentOptions.map((opt, index) => (
-                                    <button
+                            {/* 4x2 격자 배열 (선생님 사진과 동일한 비율 및 테두리 두께) */}
+                            <div className="w-[95%] max-w-7xl h-[80%] grid grid-cols-4 grid-rows-2 gap-4 pb-6">
+                                {STAGES_DATA[currentStage].map((terrain, index) => (
+                                    <div 
                                         key={index}
-                                        onClick={() => handleWordClick(opt.category)}
-                                        className="absolute text-3xl md:text-5xl font-bold py-6 px-10 rounded-full shadow-xl bg-white border-4 border-indigo-400 text-indigo-800 animate-beat pop-in hover:bg-indigo-50 active:bg-indigo-200 transition-colors"
-                                        style={{ top: opt.top, left: opt.left, animationDelay: `${index * 0.1}s` }}
+                                        onClick={() => toggleCard(index)}
+                                        className={`
+                                            relative w-full h-full border-8 cursor-pointer flex items-center justify-center overflow-hidden
+                                            transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,0.3)]
+                                            ${TERRAIN_TYPES[terrain].color}
+                                            ${revealedCards[index] ? 'border-green-500 scale-[0.98]' : 'border-black'}
+                                        `}
                                     >
-                                        {opt.word}
-                                    </button>
+                                        {/* 배경 아이콘 (지형을 뜻하는 이모지를 배경 그림처럼 크게 배치) */}
+                                        <span className="text-[12rem] opacity-40 select-none">
+                                            {TERRAIN_TYPES[terrain].icon}
+                                        </span>
+
+                                        {/* 터치 시 나타나는 굵은 글씨 ("하천", "산지" 등) */}
+                                        {revealedCards[index] && (
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm">
+                                                <span className="text-[7rem] font-black text-white text-stroke animate-pop tracking-widest drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)]"
+                                                      style={{ WebkitTextStroke: '4px black' }}>
+                                                    {terrain}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
                                 ))}
                             </div>
-                        </>
-                    )}
 
-                    {/* 게임 종료 화면 */}
-                    {gameState === 'end' && (
-                        <div className="text-center z-10 p-12 bg-white/95 rounded-3xl shadow-2xl pop-in">
-                            <h2 className="text-6xl font-bold text-red-500 mb-6">⏰ 타임 오버!</h2>
-                            <p className="text-4xl text-gray-700 mb-8">최종 점수: <span className="text-5xl font-bold text-blue-600">{score}</span>점</p>
-                            <button 
-                                onClick={startGame}
-                                className="px-10 py-5 bg-blue-500 text-white text-3xl rounded-full shadow-lg hover:scale-105 active:scale-95 transition-transform"
-                            >
-                                다시 도전하기
-                            </button>
                         </div>
                     )}
-
                 </div>
             );
         }
