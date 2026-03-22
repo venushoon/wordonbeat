@@ -26,9 +26,10 @@
             user-select: none;
         }
 
+        /* 0.34초 비트에 맞춘 역동적인 타격감 */
         @keyframes beatSnap {
-            0% { transform: scale(1.1); border-color: #ef4444; box-shadow: 0 0 35px rgba(239, 68, 68, 0.8); }
-            100% { transform: scale(1.0); border-color: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
+            0% { transform: scale(1.15); border-color: #ef4444; box-shadow: 0 0 45px rgba(239, 68, 68, 1); }
+            100% { transform: scale(1.0); border-color: #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); }
         }
         .highlight-beat {
             animation: beatSnap 0.25s cubic-bezier(0.1, 0.9, 0.2, 1) forwards !important;
@@ -42,20 +43,9 @@
             color: #b91c1c; 
         }
 
-        .responsive-emoji {
-            font-size: min(10vw, 13vh);
-            line-height: 1;
-        }
-        .responsive-text {
-            font-size: min(5vw, 6vh);
-            line-height: 1.2;
-            margin-top: 0.5rem;
-            color: #1e293b;
-        }
-        .text-only-mode {
-            font-size: min(7vw, 9vh);
-            color: #1e293b;
-        }
+        .responsive-emoji { font-size: min(10vw, 13vh); line-height: 1; }
+        .responsive-text { font-size: min(5vw, 6vh); line-height: 1.2; margin-top: 0.5rem; color: #1e293b; }
+        .text-only-mode { font-size: min(7vw, 9vh); color: #1e293b; }
     </style>
 </head>
 <body>
@@ -72,18 +62,20 @@
         };
 
         const STAGES_DATA = [
-            ['하천', '하천', '하천', '하천', '산지', '하천', '산지', '하천'], // 1단계
-            ['평야', '산지', '평야', '평야', '하천', '평야', '산지', '평야'], // 2단계
-            ['해안', '해안', '산지', '해안', '해안', '하천', '해안', '해안'], // 3단계
-            ['산지', '산지', '하천', '평야', '산지', '산지', '해안', '산지'], // 4단계
-            ['하천', '평야', '해안', '산지', '평야', '하천', '산지', '해안']  // 5단계
+            ['하천', '하천', '하천', '하천', '산지', '하천', '산지', '하천'],
+            ['평야', '산지', '평야', '평야', '하천', '평야', '산지', '평야'],
+            ['해안', '해안', '산지', '해안', '해안', '하천', '해안', '해안'],
+            ['산지', '산지', '하천', '평야', '산지', '산지', '해안', '산지'],
+            ['하천', '평야', '해안', '산지', '평야', '하천', '산지', '해안']
         ];
 
-        // 🔥 음악적 분석을 바탕으로 30초 음원에 맞춘 최적화 세팅
-        const BEAT_DURATION = 0.5; // 약 120BPM 기준 (1박자 = 0.5초) -> 초등학생이 가장 신나게 외칠 수 있는 정석 속도
-        const INTRO_BEATS = 8;     // 준비 8박자 (약 4초 소요)
-        const GAME_START_TIME = BEAT_DURATION * INTRO_BEATS; 
-        const BEATS_PER_STAGE = 8; // 🔥 1단계당 8박자(1바퀴)로 축소! (총 5단계 = 40박자 = 20초 소요)
+        // 🔥 30초에 정확히 88박자(준비 8박자 + 게임 80박자)를 꽉 채우는 절대 계산식
+        const TOTAL_DURATION = 30.0; 
+        const TOTAL_BEATS = 88;
+        const BEAT_DURATION = TOTAL_DURATION / TOTAL_BEATS; // 1박자당 약 0.3409초
+        const INTRO_BEATS = 8;
+        const GAME_START_TIME = BEAT_DURATION * INTRO_BEATS; // 약 2.727초 시점에 본게임 시작
+        const BEATS_PER_STAGE = 16; // 8칸 2바퀴
 
         function App() {
             const [gameState, setGameState] = useState('ready'); 
@@ -100,31 +92,29 @@
                     if (gameState !== 'ready' && gameState !== 'end' && audioRef.current && !audioRef.current.paused) {
                         const t = audioRef.current.currentTime;
 
-                        // 1. 본 게임 시작 (인트로 8박자 이후)
+                        // 본 게임 (8박자 이후 30초 끝날 때까지)
                         if (t >= GAME_START_TIME) {
                             if (gameState !== 'playing') setGameState('playing');
                             
                             const playTime = t - GAME_START_TIME;
                             const totalBeatsElapsed = Math.floor(playTime / BEAT_DURATION);
                             
-                            // 5단계(40비트) 종료 처리
-                            if (totalBeatsElapsed >= 40) {
+                            // 80비트(본게임 분량)가 넘어가거나 노래가 끝나면 종료
+                            if (totalBeatsElapsed >= 80 || t >= TOTAL_DURATION) {
                                 setGameState('end');
-                                // 게임은 끝났지만, 노래는 남은 여운(약 5~6초)을 위해 멈추지 않고 끝까지 틀어둠
+                                audioRef.current.pause();
                                 return;
                             }
 
-                            // 단계 계산 (1단계 = 8박자)
                             const newStage = Math.floor(totalBeatsElapsed / BEATS_PER_STAGE);
-                            if (newStage !== currentStage) {
+                            if (newStage !== currentStage && newStage < 5) {
                                 setCurrentStage(newStage);
                             }
 
-                            // 하이라이트 인덱스 계산 (0~7)
                             const targetIndex = totalBeatsElapsed % 8;
                             setHighlightIndex(prev => prev !== targetIndex ? targetIndex : prev);
                         } 
-                        // 2. 준비 구간 (시작 ~ 8박자까지)
+                        // 인트로 준비 구간 (0초 ~ 약 2.72초)
                         else {
                             if (gameState !== 'preparing') setGameState('preparing');
                             setHighlightIndex(-1);
@@ -143,7 +133,6 @@
                 return () => cancelAnimationFrame(animationFrameId);
             }, [gameState, currentStage]);
 
-            // 노래가 완전히 끝났을 때만 명확하게 종료 처리
             const handleAudioEnded = () => {
                 setGameState('end');
             };
@@ -156,7 +145,7 @@
                     
                     audioRef.current.currentTime = 0;
                     audioRef.current.play().catch(error => {
-                        console.error("오디오 재생 실패:", error);
+                        console.error("오디오 에러:", error);
                         alert("오디오 재생 권한이 필요합니다.");
                         setGameState('ready');
                     });
@@ -174,22 +163,14 @@
             return (
                 <div className="w-screen h-screen flex flex-col relative overflow-hidden bg-white text-gray-900">
                     
-                    <audio 
-                        ref={audioRef} 
-                        src="./song.mp3" 
-                        preload="auto"
-                        onEnded={handleAudioEnded}
-                    ></audio>
+                    <audio ref={audioRef} src="./song.mp3" preload="auto" onEnded={handleAudioEnded}></audio>
 
                     {(gameState === 'ready' || gameState === 'end') && (
                         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center p-8 bg-slate-50/95 backdrop-blur-sm transition-all duration-300">
                             
                             {gameState === 'ready' && (
                                 <div className="w-full max-w-4xl flex flex-col items-center animate-fade-in">
-                                    <h1 className="text-6xl md:text-8xl font-black mb-12 text-gray-900 tracking-tight text-center drop-shadow-sm">
-                                        단어 리듬 게임
-                                    </h1>
-                                    
+                                    <h1 className="text-6xl md:text-8xl font-black mb-12 text-gray-900 tracking-tight text-center drop-shadow-sm">단어 리듬 게임</h1>
                                     <div className="w-full bg-white p-10 rounded-[2rem] shadow-xl border border-slate-200 mb-12 flex flex-col items-center">
                                         <p className="text-3xl font-bold mb-8 text-slate-700">화면 표시 방식</p>
                                         <div className="flex flex-wrap gap-5 justify-center">
@@ -198,10 +179,7 @@
                                             <button onClick={() => setCardDisplayMode('text-only')} className={`px-10 py-5 text-2xl font-bold rounded-2xl transition-all ${cardDisplayMode === 'text-only' ? 'bg-blue-600 text-white shadow-lg scale-105' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>✍️ 단어만</button>
                                         </div>
                                     </div>
-
-                                    <button onClick={startGame} className="px-24 py-8 bg-gray-900 text-white font-black text-5xl rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all">
-                                        ▶ 플레이 시작
-                                    </button>
+                                    <button onClick={startGame} className="px-24 py-8 bg-gray-900 text-white font-black text-5xl rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all">▶ 플레이 시작</button>
                                 </div>
                             )}
 
@@ -217,7 +195,6 @@
 
                     <header className="h-[12vh] shrink-0 flex justify-between items-center px-10 border-b-2 border-slate-200 bg-white z-10 shadow-sm">
                         <div className="text-5xl">📢</div>
-                        
                         <div className="flex-1 flex flex-col items-center justify-center">
                             {gameState === 'preparing' && (
                                 <div className="text-3xl font-black text-red-500 animate-pulse bg-red-50 px-8 py-3 rounded-full border border-red-200">
@@ -230,7 +207,6 @@
                                 </span>
                             )}
                         </div>
-
                         <div className="text-5xl opacity-0">📢</div>
                     </header>
 
@@ -238,28 +214,11 @@
                         <div className="w-full h-full max-w-7xl grid grid-cols-4 grid-rows-2 gap-5 md:gap-8">
                             {STAGES_DATA[currentStage].map((terrain, index) => {
                                 const isHighlighted = index === highlightIndex;
-
                                 return (
-                                    <div 
-                                        key={index}
-                                        className={`
-                                            relative w-full h-full rounded-3xl border-[6px] overflow-hidden bg-white shadow-sm
-                                            transition-all duration-[50ms]
-                                            ${isHighlighted ? 'highlight-beat' : 'border-slate-300'}
-                                        `}
-                                    >
+                                    <div key={index} className={`relative w-full h-full rounded-3xl border-[6px] overflow-hidden bg-white shadow-sm transition-all duration-[50ms] ${isHighlighted ? 'highlight-beat' : 'border-slate-300'}`}>
                                         <div className={`absolute inset-0 flex flex-col items-center justify-center p-2 ${isHighlighted ? 'content-active bg-red-50/40' : TERRAIN_TYPES[terrain].color}`}>
-                                            
-                                            {cardDisplayMode !== 'text-only' && (
-                                                <span className="responsive-emoji drop-shadow-sm">{TERRAIN_TYPES[terrain].icon}</span>
-                                            )}
-                                            
-                                            {cardDisplayMode !== 'image-only' && (
-                                                <span className={`font-black tracking-wider text-center ${cardDisplayMode === 'text-only' ? 'text-only-mode' : 'responsive-text'}`}>
-                                                    {terrain}
-                                                </span>
-                                            )}
-
+                                            {cardDisplayMode !== 'text-only' && <span className="responsive-emoji drop-shadow-sm">{TERRAIN_TYPES[terrain].icon}</span>}
+                                            {cardDisplayMode !== 'image-only' && <span className={`font-black tracking-wider text-center ${cardDisplayMode === 'text-only' ? 'text-only-mode' : 'responsive-text'}`}>{terrain}</span>}
                                         </div>
                                     </div>
                                 );
@@ -268,14 +227,9 @@
                     </main>
 
                     <footer className="h-[10vh] shrink-0 bg-white border-t-2 border-slate-200 flex justify-between items-center px-10 z-10 shadow-sm">
-                        <div className="text-3xl font-black text-slate-600 flex-1 text-center tracking-wide">
-                            🔥 비트에 맞춰 다 함께 큰 소리로 외쳐요!
-                        </div>
-                        <button onClick={restartGame} className="px-8 py-4 bg-slate-200 text-slate-700 font-bold text-2xl rounded-2xl hover:bg-slate-300 active:scale-95 transition-all">
-                            종료 ⏹️
-                        </button>
+                        <div className="text-3xl font-black text-slate-600 flex-1 text-center tracking-wide">🔥 비트에 맞춰 다 함께 큰 소리로 외쳐요!</div>
+                        <button onClick={restartGame} className="px-8 py-4 bg-slate-200 text-slate-700 font-bold text-2xl rounded-2xl hover:bg-slate-300 active:scale-95 transition-all">종료 ⏹️</button>
                     </footer>
-                    
                 </div>
             );
         }
