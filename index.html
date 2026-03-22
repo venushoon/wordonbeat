@@ -85,18 +85,19 @@
             ['하천', '평야', '해안', '산지', '평야', '하천', '산지', '해안']  // 5단계
         ];
 
-        // 🔥 선생님의 지적대로 수정한 초정밀 16비트 템포 세팅
-        const BASE_INTRO_DURATION = 2727; // 인트로 대기 시간 (약 8비트)
+        // 🔥 선생님 피드백 반영: 시작 시점을 2박자(약 682ms) 앞당김!
+        // 기존 2727ms -> 수정 후 2045ms 로 변경하여 늦게 뜨는 현상 해결
+        const BASE_INTRO_DURATION = 2045; 
         const STAGE_DURATION = 5454;      // 1단계 총 시간 (5.45초)
         const BEATS_PER_STAGE = 16;       // 8개의 카드를 2번 반복 = 16비트
-        const BEAT_DURATION = STAGE_DURATION / BEATS_PER_STAGE; // 1칸 이동 시간 (약 340.8ms - 엄청 빠른 릴스 속도!)
+        const BEAT_DURATION = STAGE_DURATION / BEATS_PER_STAGE; // 1칸 이동 시간 (약 340.8ms)
 
         function App() {
             const [gameState, setGameState] = useState('ready'); 
             const [currentStage, setCurrentStage] = useState(0);
             const [showVideo, setShowVideo] = useState(false);
             const [cardDisplayMode, setCardDisplayMode] = useState('image-and-text'); 
-            const [syncOffset, setSyncOffset] = useState(200); // 유튜브 로딩 보정치
+            const [syncOffset, setSyncOffset] = useState(0); // 기본값을 0으로 리셋 (BASE_INTRO_DURATION에서 이미 보정함)
             
             // highlightIndex는 0~7 사이를 반복함
             const [highlightIndex, setHighlightIndex] = useState(-1);
@@ -120,6 +121,7 @@
                 sendYTCmd('seekTo', [0, true]);
                 sendYTCmd('playVideo');
 
+                // 싱크 오프셋이 적용된 정확한 인트로 타임아웃
                 const exactIntroDuration = BASE_INTRO_DURATION + syncOffset;
 
                 setTimeout(() => {
@@ -148,7 +150,7 @@
                 });
             };
 
-            // 🎵 선생님 피드백 완벽 반영: 16비트(8칸 2바퀴) 회전 로직
+            // 🎵 16비트(8칸 2바퀴) 회전 로직
             useEffect(() => {
                 let animationFrameId;
                 let startTime;
@@ -219,12 +221,12 @@
 
                                     <div className="mb-10 p-4 bg-blue-50 rounded-2xl border-4 border-blue-200 flex flex-col items-center">
                                         <div className="text-xl font-bold text-blue-800 mb-2">
-                                            ⚙️ 오디오 싱크 맞추기 <span className="text-sm font-normal text-gray-500">(소리가 늦으면 +, 빠르면 -)</span>
+                                            ⚙️ 미세 오디오 싱크 조절 <span className="text-sm font-normal text-gray-500">(필요시 사용)</span>
                                         </div>
                                         <div className="flex items-center gap-6">
-                                            <button onClick={() => setSyncOffset(o => o - 100)} className="px-4 py-2 bg-white border-2 border-black rounded-lg font-bold text-xl active:bg-gray-200">-100ms</button>
+                                            <button onClick={() => setSyncOffset(o => o - 50)} className="px-4 py-2 bg-white border-2 border-black rounded-lg font-bold text-xl active:bg-gray-200">-50ms (더 일찍)</button>
                                             <div className="text-2xl font-black min-w-[120px] text-center">{syncOffset > 0 ? `+${syncOffset}` : syncOffset} ms</div>
-                                            <button onClick={() => setSyncOffset(o => o + 100)} className="px-4 py-2 bg-white border-2 border-black rounded-lg font-bold text-xl active:bg-gray-200">+100ms</button>
+                                            <button onClick={() => setSyncOffset(o => o + 50)} className="px-4 py-2 bg-white border-2 border-black rounded-lg font-bold text-xl active:bg-gray-200">+50ms (더 늦게)</button>
                                         </div>
                                     </div>
 
@@ -278,7 +280,6 @@
                     <main className="flex-1 min-h-0 w-full flex items-center justify-center p-4 bg-slate-100/50">
                         <div className="w-full h-full max-w-7xl max-h-[80vh] grid grid-cols-4 grid-rows-2 gap-3 md:gap-5">
                             {STAGES_DATA[currentStage].map((terrain, index) => {
-                                // 현재 순환하는 인덱스와 카드 위치가 일치하는지 확인
                                 const isHighlighted = index === highlightIndex;
 
                                 return (
